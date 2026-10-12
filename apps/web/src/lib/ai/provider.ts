@@ -26,6 +26,7 @@ export interface GenerateRequest {
   userMessage: string;
   speaker: 'learner' | 'parent';
   location: { state: string; district: string };
+  household?: { incomeBracket?: string | null; learnerClass?: string | null };
   tradeName?: string;
   verifiedOutcomes?: VerifiedOutcome | null;
   verifiedEvidence?: unknown;
@@ -46,12 +47,18 @@ const outcomeTool: VerifiedDataTool = {
   parameters: {
     type: 'object',
     properties: {
-      district: { type: 'string', enum: ['Adilabad', 'Karimnagar', 'Hyderabad'] },
+      district: { type: 'string' },
       trade: { type: 'string' },
     },
     required: ['district', 'trade'],
   },
 };
+
+function householdInstruction(h?: GenerateRequest['household']) {
+  const parts = [h?.incomeBracket && `household income bracket ${h.incomeBracket}`, h?.learnerClass && `learner's education ${h.learnerClass}`].filter(Boolean);
+  const ctx = parts.length ? `Family context: ${parts.join('; ')}. ` : '';
+  return `${ctx}Write for a parent with little schooling: short sentences, no jargon. If you mention NSQF, explain it as a skill ladder with levels. Never invent figures.`;
+}
 
 function languageInstruction(language: GenerateRequest['language']) {
   if (language === 'te') return 'Reply in clear, natural Telugu. Keep technical terms such as ITI, NSQF and placement consistent with the glossary.';
@@ -62,7 +69,22 @@ function languageInstruction(language: GenerateRequest['language']) {
 
 export class GeminiProvider implements AiProvider {
   private readonly apiKey = process.env.GEMINI_API_KEY;
-  private readonly model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  private readonly primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+  private readonly fallbackModel = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash';
+
+  private async fetchWithFallback(urlPrimary: string, urlFallback: string, options: RequestInit): Promise<Response> {
+    try {
+      const res = await fetch(urlPrimary, { ...options, signal: AbortSignal.timeout(10000) });
+      if (res.status === 404 || res.status === 400) {
+        console.warn(`[GeminiProvider] Primary model returned ${res.status}. Falling back to ${this.fallbackModel}...`);
+        return await fetch(urlFallback, { ...options, signal: AbortSignal.timeout(10000) });
+      }
+      return res;
+    } catch (err: any) {
+      console.warn(`[GeminiProvider] Primary model call failed (${err?.message}). Retrying with fallback ${this.fallbackModel}...`);
+      return await fetch(urlFallback, { ...options, signal: AbortSignal.timeout(10000) });
+    }
+  }
 
   async generate(request: GenerateRequest): Promise<GenerateResponse> {
     if (!this.apiKey) throw new Error('GEMINI_API_KEY is not configured');
@@ -70,6 +92,7 @@ export class GeminiProvider implements AiProvider {
     const system = [
       'You are Parivar Path, a family vocational guidance assistant for Telangana.',
       languageInstruction(request.language),
+      householdInstruction(request.household),
       'The family may include a learner and a parent. Respect both perspectives.',
       'Never invent placement, salary, fee, scheme, source, or sample-size figures.',
       'Only use numbers present in VERIFIED_DATA. If it is absent or unavailable, say verified data is unavailable.',
@@ -81,15 +104,16 @@ export class GeminiProvider implements AiProvider {
       system_instruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: `<user_message>${request.userMessage}</user_message>` }] }],
       tools: [{ function_declarations: [outcomeTool] }],
-      generation_config: { temperature: 0.2, max_output_tokens: 450 },
+      generation_config: { temperature: 0.2, max_output_tokens: 1024, thinking_config: { thinking_level: 'low' } },
     };
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
-    const response = await fetch(endpoint, {
+    const endpointPrimary = `https://generativelanguage.googleapis.com/v1beta/models/${this.primaryModel}:generateContent`;
+    const endpointFallback = `https://generativelanguage.googleapis.com/v1beta/models/${this.fallbackModel}:generateContent`;
+
+    const response = await this.fetchWithFallback(endpointPrimary, endpointFallback, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(12000),
     });
 
     if (response.status === 429) throw new Error('AI_RATE_LIMITED');
@@ -97,22 +121,25 @@ export class GeminiProvider implements AiProvider {
 
     const payload = await response.json();
     const parts = payload.candidates?.[0]?.content?.parts || [];
+    // Keep the ORIGINAL part: Gemini 3 returns a thought signature next to functionCall and
+    // rejects the follow-up with HTTP 400 if it is not echoed back unchanged.
+    const functionCallPart = parts.find((part: { functionCall?: unknown }) => part.functionCall);
     const functionCall = parts.find((part: { functionCall?: { name: string; args: Record<string, string> } }) => part.functionCall)?.functionCall;
     const text = parts.find((part: { text?: string }) => part.text)?.text;
 
     if (functionCall) {
-      const followUp = await fetch(endpoint, {
+      const followUpBody = {
+        ...body,
+        contents: [
+          ...body.contents,
+          { role: 'model', parts: [functionCallPart] },
+          { role: 'user', parts: [{ functionResponse: { name: functionCall.name, response: { data: request.verifiedEvidence || null } } }] },
+        ],
+      };
+      const followUp = await this.fetchWithFallback(endpointPrimary, endpointFallback, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
-        body: JSON.stringify({
-          ...body,
-          contents: [
-            ...body.contents,
-            { role: 'model', parts: [{ functionCall }] },
-            { role: 'user', parts: [{ functionResponse: { name: functionCall.name, response: { data: request.verifiedEvidence || null } } }] },
-          ],
-        }),
-        signal: AbortSignal.timeout(12000),
+        body: JSON.stringify(followUpBody),
       });
       if (!followUp.ok) throw new Error(`Gemini follow-up failed: ${followUp.status}`);
       const followUpPayload = await followUp.json();

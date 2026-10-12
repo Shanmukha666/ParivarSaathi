@@ -27,7 +27,7 @@ export default function PathwayLadder({ levels }: { levels: LevelItem[] }) {
                   metric: 'Expected Salary Range',
                   value: lvl.salary,
                   trade: lvl.title,
-                  source: 'NCVT / MSDE Career Pathway Data',
+                  source: 'Evaluation dataset (dummy)',
                   notes: `NSQF progression step ${idx + 1}`,
                   isVerified: true,
                 }} />

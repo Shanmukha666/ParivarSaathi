@@ -91,6 +91,8 @@ async def get_outcomes(
         if metric.metric_key not in flattened:
             flattened[metric.metric_key] = value if value is not None else metric.metric_text
 
+    latest = metrics[0]
+    latest_source = latest["source"]
     return {
         "found": True,
         "tool_result_id": f"outcomes_{trade_id}_{scope}",
@@ -101,7 +103,15 @@ async def get_outcomes(
         ),
         "metrics": metrics,
         "values": flattened,
+        "placement_rate": flattened.get("placement_rate"),
+        "avg_start_salary_inr": flattened.get("starting_earnings"),
+        "avg_mid_career_salary_inr": flattened.get("earnings_after_period"),
+        "verification_date": latest.get("verification_date"),
+        "source": latest_source,
+        "sample_size": latest.get("sample_size"),
+        "cohort_year": latest.get("year"),
         "verification_status": "verified",
+        "is_synthetic": False,
     }
 
 
@@ -171,6 +181,7 @@ async def find_providers(
             select(Provider, DataSource)
             .outerjoin(DataSource, DataSource.id == Provider.source_id)
             .where(
+                func.lower(Provider.state) == state.lower(),
                 func.lower(Provider.district) == district.lower(),
                 Provider.verified.is_(True),
                 Provider.is_synthetic.is_(False),
@@ -341,7 +352,14 @@ async def recommend_trades(
     """
     # Map common interests to sectors/keywords
     interest_map = {
-        "electrical": ["electrical", "electronics", "electrician"],
+        "tech": ["it", "data", "computer", "digital", "electronics", "technology"],
+        "health": ["health", "medical", "care", "wellness"],
+        "build": ["plumber", "construction", "civil", "fitter", "building"],
+        "art": ["beauty", "beautician", "wellness", "fashion", "tailoring", "textile", "art"],
+        "food": ["food", "cook", "culinary", "hospitality", "processing"],
+        "auto": ["auto", "automotive", "mechanic", "vehicle"],
+        # Backward-compatible values used by older saved profiles.
+        "electrical": ["electrical", "electronics", "electrician", "solar", "renewable"],
         "mechanical": ["mechanical", "fitter", "auto", "cnc", "hvac", "welder"],
         "computers": ["it", "data", "computer", "digital"],
         "beauty": ["beauty", "beautician", "wellness"],
@@ -385,7 +403,7 @@ async def recommend_trades(
 
     # Sort by score, take top 3
     scored.sort(key=lambda x: x[1], reverse=True)
-    top_trades = scored[:3] if scored else [(t, 0) for t in all_trades[:3]]
+    top_trades = scored[:3]
 
     return {
         "found": True,

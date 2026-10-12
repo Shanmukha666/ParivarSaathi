@@ -4,8 +4,8 @@
 
 :root {
   --foreground-rgb: 31, 41, 55;
-  --background-start-rgb: 255, 251, 235;
-  --background-end-rgb: 255, 251, 235;
+  --background-start-rgb: 242, 246, 244;
+  --background-end-rgb: 242, 246, 244;
 }
 
 body {
@@ -24,7 +24,7 @@ body {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: radial-gradient(circle at 78% 42%, rgba(214, 243, 106, 0.12), transparent 27%), radial-gradient(circle at 7% 92%, rgba(241, 125, 57, 0.12), transparent 22%);
+  background: radial-gradient(circle at 78% 42%, rgba(214, 243, 106, 0.13), transparent 28%), radial-gradient(circle at 7% 92%, rgba(32, 160, 130, 0.18), transparent 26%);
   content: '';
 }
 
@@ -52,7 +52,7 @@ body {
 .orbit-two { top: 22%; left: 0; height: 52%; width: 100%; border-color: rgba(255,255,255,.13); }
 .path-card { position: absolute; width: min(76%, 420px); aspect-ratio: 1.38; border-radius: 28px; box-shadow: 24px 32px 60px rgba(0,0,0,.35); }
 .path-card-main { top: 19%; left: 14%; z-index: 2; padding: 26px; background: #d6f36a; color: #19231f; transform: rotate(-9deg); }
-.path-card-back { top: 28%; left: 23%; z-index: 1; padding: 28px; background: #f17d39; color: #fff7e8; transform: rotate(10deg); }
+.path-card-back { top: 28%; left: 23%; z-index: 1; padding: 28px; background: linear-gradient(145deg, #1F9E80, #0C5F4A); color: #E9FFF6; transform: rotate(10deg); }
 .path-card-back strong { position: absolute; right: 28px; bottom: 20px; font-size: 86px; letter-spacing: 0; }
 .floating-note { position: absolute; right: 0; bottom: 18%; z-index: 3; padding: 14px 17px; border: 1px solid rgba(255,255,255,.15); border-radius: 15px; background: rgba(17,23,20,.82); color: rgba(255,255,255,.65); font-size: 11px; line-height: 1.5; backdrop-filter: blur(12px); }
 .floating-note strong { color: #d6f36a; font-size: 13px; }
@@ -94,3 +94,34 @@ button, input, select, textarea, a {
 @media (max-width: 374px) {
   .landing-title { font-size: 3rem; }
 }
+
+/* ---------- Design system: ink / jade / signal-lime ---------- */
+@layer base {
+  h1, h2, h3 { font-family: var(--font-display), var(--font-inter), var(--font-noto-hindi), var(--font-noto-telugu), var(--font-noto-tamil), sans-serif; letter-spacing: -0.015em; }
+  :focus-visible { outline: 3px solid #12936F; outline-offset: 2px; border-radius: 10px; }
+  ::selection { background: #D6F36A; color: #0C1311; }
+}
+.app-backdrop {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 500px at 85% -10%, rgba(214,243,106,.12), transparent 60%),
+    radial-gradient(700px 500px at -10% 110%, rgba(32,160,130,.22), transparent 60%),
+    linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 44px 44px,
+    #0C1311;
+}
+@media (min-width: 640px) { .app-backdrop { padding: 28px 0; } .app-surface { min-height: calc(100vh - 56px); border-radius: 28px; overflow: hidden; box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08); } }
+.chat-header { background: rgba(255,255,255,.86); backdrop-filter: blur(14px); border-bottom: 1px solid #D7E0DC; box-shadow: 0 1px 0 rgba(12,19,17,.04), 0 8px 24px -16px rgba(12,19,17,.25); }
+.chat-header .brand-mark { height: 40px; width: 40px; border-radius: 12px; background: #0C1311; color: #D6F36A; font-size: 20px; }
+.voice-pop { position: absolute; right: 0; bottom: calc(100% + 10px); width: 13rem; padding: 10px 12px; border-radius: 12px; background: #0C1311; color: #E9F2EE; box-shadow: 0 12px 30px rgba(0,0,0,.3); }
+.voice-pop button { color: #D6F36A; }
+.app-surface main, .app-surface footer { position: relative; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.app-surface > * { animation: rise .45s cubic-bezier(.2,.7,.2,1) both; }
+@media (prefers-reduced-motion: reduce) { .app-surface > *, * { animation: none !important; transition: none !important; } }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:active:not(:disabled) { transform: translateY(1px) scale(.99); }
+
+.font-black.text-orange-600 { font-size: clamp(1.2rem, 5.8vw, 1.9rem); white-space: nowrap; letter-spacing: -0.02em; }
+
+@media (max-width: 520px) { .visual-caption { display: none; } }

@@ -10,6 +10,7 @@ try:
 except ImportError:
     from jose import JWTError, jwt
 from datetime import datetime, timedelta
+import os
 
 from app.database import get_db
 from app.models.models import User
@@ -102,13 +103,13 @@ class AnonymousUser:
 
 
 async def family_user(token: str = Depends(OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)), db: AsyncSession = Depends(get_db)):
-    """Allow anonymous access for hackathon demo; authenticate if token provided."""
+    """Allow anonymous family access only when the backend is explicitly in demo mode."""
+    demo_mode = os.getenv("DEMO_MODE", "false").lower() == "true"
     if not token:
-        return AnonymousUser()
-    try:
-        return await get_current_user(token, db)
-    except HTTPException:
-        return AnonymousUser()
+        if demo_mode:
+            return AnonymousUser()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    return await get_current_user(token, db)
 
 @router.get("/me")
 async def get_me(current_user: Any = Depends(get_current_user)):

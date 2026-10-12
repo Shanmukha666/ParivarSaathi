@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import FamilySummaryCard from '../../components/FamilySummaryCard';
 import { MessageSquare, RefreshCw, Home, PhoneCall } from 'lucide-react';
 import { useStore } from '../../lib/store';
-import { fetchTradeDetail, fetchTradeOutcomes, fetchTradePathway, fetchProviders } from '../../lib/api';
+import { fetchTradeDetail, fetchTradeOutcomes, fetchTradePathway, fetchProviders, fetchSchemes } from '../../lib/api';
 
 export default function SummaryPage() {
   const router = useRouter();
@@ -22,13 +22,14 @@ export default function SummaryPage() {
       try {
         const id = profile.selectedTradeId;
         const dist = profile.district;
-        const [trade, outcomes, pathway, providers] = await Promise.all([
+        const [trade, outcomes, pathway, providers, schemes] = await Promise.all([
           fetchTradeDetail(id),
           fetchTradeOutcomes(id, dist),
           fetchTradePathway(id),
-          fetchProviders(dist)
+          fetchProviders(dist),
+          fetchSchemes(profile.state, profile.income),
         ]);
-        setData({ trade, outcomes, pathway, providers });
+        setData({ trade, outcomes, pathway, providers, schemes });
       } catch (e) {
         console.error('Failed to load summary data', e);
       } finally {

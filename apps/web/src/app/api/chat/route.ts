@@ -20,7 +20,8 @@ import {
   crisisReply,
   hasDistressSignal as detectsDistress,
 } from '../../../lib/safety';
-import { demoChatReply, hasSupabaseConfig } from '../../../lib/demo-mode';
+import { hasSupabaseConfig, isDemoMode } from '../../../lib/demo-mode';
+import { evidenceReply } from '../../../lib/demo-answers';
 
 const MAX_MESSAGES_PER_SESSION = 30;
 
@@ -38,47 +39,31 @@ export async function POST(request: Request) {
     session_id?: string;
     speaker?: 'learner' | 'parent';
     text?: string;
-    lang?: 'en' | 'te' | 'hi';
+    trade_id?: number;
+    lang?: 'en' | 'te' | 'hi' | 'ta';
   };
 
+  if (isDemoMode()) {
+    // Safety first: crisis messages must never reach the canned evidence answers.
+    if (detectsDistress(body.text || '')) {
+      return NextResponse.json({
+        reply: crisisReply(body.lang || 'en'),
+        citations: [],
+        suggested_chips: [],
+        escalate: true,
+        escalate_reason: 'distress_signal',
+      });
+    }
+    return NextResponse.json(evidenceReply(body.text || '', body.lang || 'en', Number(body.trade_id) || undefined));
+  }
+
   if (!hasSupabaseConfig()) {
-    return NextResponse.json(
-      demoChatReply(body.text || '', body.lang || 'en'),
-    );
+    return NextResponse.json({ error: 'Supabase is not configured' }, { status: 503 });
   }
 
   const supabase = await createSupabaseServerClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  // Anonymous users are proxied to the FastAPI backend.
-  if (!user) {
-    try {
-      const backendUrl =
-        process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-      const backendRes = await fetch(`${backendUrl}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (backendRes.ok) {
-        const data = await backendRes.json();
-        return NextResponse.json(data);
-      }
-    } catch {
-      // Fall back to demo mode when the backend is unavailable.
-    }
-
-    return NextResponse.json(
-      demoChatReply(body.text || '', body.lang || 'en'),
-    );
-  }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
   if (!enforceRateLimit(`chat:${user.id}`, 30)) {
     return NextResponse.json(
@@ -108,16 +93,18 @@ export async function POST(request: Request) {
   const { data: session, error: sessionError } = await supabase
     .from('sessions')
     .select(
-      'id, owner_id, state, district, lang, selected_trade_id, concern_state, trades(name_en)',
+      'id, owner_id, state, district, lang, selected_trade_id, concern_state, learner_class, income_bracket, trades(name_en)',
     )
     .eq('id', body.session_id)
     .eq('owner_id', user.id)
     .single();
 
   if (sessionError || !session) {
-    return NextResponse.json(
-      demoChatReply(body.text, body.lang || 'en'),
-    );
+    return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  }
+
+  if (!session.selected_trade_id) {
+    return NextResponse.json({ error: 'Selected trade is required' }, { status: 409 });
   }
 
   const { count } = await supabase
@@ -221,7 +208,7 @@ export async function POST(request: Request) {
   let evidenceMetrics: EvidenceMetric[] = [];
   let evidence = assessEvidence(evidenceMetrics);
 
-  if (session.selected_trade_id) {
+  {
     const { data: metricRows } = await supabase
       .from('outcome_metrics')
       .select(
@@ -337,6 +324,7 @@ export async function POST(request: Request) {
         state: session.state,
         district: session.district,
       },
+      household: { incomeBracket: session.income_bracket, learnerClass: session.learner_class },
       tradeName: (session.trades as { name_en?: string } | null)?.name_en,
       verifiedOutcomes: outcomes,
       verifiedEvidence: evidence.metrics,

@@ -18,7 +18,7 @@ if app_dir not in sys.path:
 
 from app.database import Base
 from app.models.models import (
-    Trade, Provider, Outcome, Pathway, Scheme, Story,
+    Trade, Provider, Outcome, OutcomeMetric, DataSource, Pathway, Scheme, Story,
     Session, Message, MessageAnalysis, Escalation, Event, User
 )
 
@@ -72,9 +72,17 @@ def load_data(db_url: str):
     try:
         # Clear existing data in reverse order of FKs
         print("Cleaning existing records...")
-        for model in [MessageAnalysis, Message, Escalation, Event, Session, Outcome, Pathway, Story, Provider, Scheme, Trade, User]:
+        for model in [MessageAnalysis, Message, Escalation, Event, Session, OutcomeMetric, Outcome, Pathway, Story, Provider, Scheme, DataSource, Trade, User]:
             db.query(model).delete()
         db.commit()
+
+        seed_source = DataSource(
+            publisher="Parivar Path seed fixture",
+            title="Generated CSV seed data — not verified for production use",
+            document_reference="services/api/app/seed/*.csv",
+        )
+        db.add(seed_source)
+        db.flush()
 
         # 1. Trades
         with open(os.path.join(current_dir, "trades.csv"), encoding="utf-8") as f:
@@ -108,7 +116,10 @@ def load_data(db_url: str):
                     district=r["district"],
                     accreditation=r["accreditation"],
                     fee_inr=int(r["fee_inr"]),
-                    contact=r["contact"]
+                    contact=r["contact"],
+                    verified=False,
+                    is_synthetic=True,
+                    source_id=seed_source.id,
                 )
                 db.add(p)
             db.commit()
@@ -132,11 +143,38 @@ def load_data(db_url: str):
                     self_employment_rate=float(r["self_employment_rate"]),
                     sample_size=int(r["sample_size"]),
                     source=r["source"],
-                    verified_on=parse_date(r["verified_on"])
+                    verified_on=parse_date(r["verified_on"]),
+                    verified=False,
+                    is_synthetic=True,
+                    review_status="pending_data_review",
                 )
                 db.add(o)
+
+                metric_specs = [
+                    ("placement_rate", float(r["placement_rate"]), None, "%"),
+                    ("starting_earnings", int(r["avg_start_salary_inr"]), None, "INR"),
+                    ("earnings_after_period", None, f"₹{r['salary_3yr_min']} - ₹{r['salary_3yr_max']}", "INR"),
+                    ("self_employment_rate", float(r["self_employment_rate"]), None, "%"),
+                ]
+                for metric_key, metric_value, metric_text, unit in metric_specs:
+                    db.add(OutcomeMetric(
+                        trade_id=int(r["trade_id"]),
+                        provider_id=int(r["provider_id"]) if r["provider_id"] else None,
+                        state=r["state"],
+                        district=r["district"],
+                        metric_key=metric_key,
+                        metric_value=metric_value,
+                        metric_text=metric_text,
+                        unit=unit,
+                        year=int(r["cohort_year"]),
+                        sample_size=int(r["sample_size"]),
+                        source_id=seed_source.id,
+                        verification_status="pending",
+                        data_quality="low",
+                        is_synthetic=True,
+                    ))
             db.commit()
-            print("Loaded outcomes.")
+            print("Loaded outcomes and normalized pending metrics.")
 
         # 4. Pathways
         with open(os.path.join(current_dir, "pathways.csv"), encoding="utf-8") as f:
@@ -150,7 +188,10 @@ def load_data(db_url: str):
                     nsqf_level=int(r["nsqf_level"]),
                     next_education=r["next_education"],
                     typical_role=r["typical_role"],
-                    typical_salary_range=r["typical_salary_range"]
+                    typical_salary_range=r["typical_salary_range"],
+                    verification_status="pending",
+                    is_synthetic=True,
+                    source_id=seed_source.id,
                 )
                 db.add(pw)
             db.commit()

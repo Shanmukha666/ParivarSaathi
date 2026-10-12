@@ -13,7 +13,7 @@ export interface ProvenanceDetails {
   provider?: string; // e.g. "Govt ITI Warangal"
   year?: string | number; // e.g. "2023 - 2024"
   sampleSize?: number; // e.g. 42
-  source?: string; // e.g. "NCVT Tracer Study / MSDE Annual Report"
+  source?: string; // e.g. "Evaluation dataset (dummy)"
   sourceUrl?: string | null;
   sourceDocument?: string; // e.g. "Table 4.2: District Skill Outcome Census"
   verifiedOn?: string | null; // e.g. "15 Feb 2024"
@@ -109,7 +109,7 @@ export default function WhyThisNumber({
           aria-expanded={isOpen}
           title={label}
         >
-          <HelpCircle size={12} className="text-slate-400 flex-shrink-0" />
+          <HelpCircle size={12} className="text-slate-500 flex-shrink-0" />
           <span>{label}</span>
         </button>
       )}
@@ -257,7 +257,7 @@ export default function WhyThisNumber({
                 <div>
                   <span className="text-slate-500 block text-[11px]">Publishing Authority</span>
                   <span className="font-bold text-slate-800 text-xs">
-                    {details.source || 'NCVT / MSDE Vocational Outcomes Survey'}
+                    {details.source || 'Evaluation dataset (dummy)'}
                   </span>
                 </div>
 

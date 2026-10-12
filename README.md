@@ -5,11 +5,13 @@
 
 ---
 
-[![Tests](https://img.shields.io/badge/pytest-123%20passed-brightgreen.svg)](file:///c:/Users/SIREESHA%20DASARI/OneDrive/Desktop/Vocational/parivar-path/services/api/tests)
-[![Evaluation Suite](https://img.shields.io/badge/AI%20Eval-60%2F60%20passed%20(100%25)-blue.svg)](file:///c:/Users/SIREESHA%20DASARI/OneDrive/Desktop/Vocational/parivar-path/docs/EVALUATION_REPORT.md)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Strict%20(0%20errors)-blue.svg)](file:///c:/Users/SIREESHA%20DASARI/OneDrive/Desktop/Vocational/parivar-path/apps/web)
-[![Next.js Build](https://img.shields.io/badge/Next.js-14%20PWA%20Ready-black.svg)](file:///c:/Users/SIREESHA%20DASARI/OneDrive/Desktop/Vocational/parivar-path/apps/web)
-[![Security Audit](https://img.shields.io/badge/Security-Red--Team%20Audited-success.svg)](file:///c:/Users/SIREESHA%20DASARI/OneDrive/Desktop/Vocational/parivar-path/services/api/tests/test_security_redteam.py)
+![Tests](https://img.shields.io/badge/pytest-138%20passed-brightgreen.svg)
+[![Evaluation Suite](https://img.shields.io/badge/AI%20Eval-60%2F60%20passed%20(100%25)-blue.svg)](docs/EVALUATION_REPORT.md)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Strict%20(0%20errors)-blue.svg)](apps/web)
+![Next.js Build](https://img.shields.io/badge/Next.js-14.2.35%20Secured-black.svg)
+[![Security Audit](https://img.shields.io/badge/Security-Red--Team%20Audited-success.svg)](docs/SECURITY_REVIEW.md)
+[![Architecture](https://img.shields.io/badge/Architecture-3--Tier%20Resilient-indigo.svg)](docs/ARCHITECTURE.md)
+[![Efficiency](https://img.shields.io/badge/Cost-0.044%20INR%2Fsession-emerald.svg)](docs/EFFICIENCY_AND_COST.md)
 
 ---
 
@@ -112,7 +114,9 @@ python run_evaluation.py
 | Concern Classification | ≥ 90% | **100.0%** | ✅ PASS |
 | Response Relevance | ≥ 95% | **100.0%** | ✅ PASS |
 
-Full report available at: [`docs/EVALUATION_REPORT.md`](file:///c:/Users/SIREESHA%20DASARI/OneDrive/Desktop/Vocational/parivar-path/docs/EVALUATION_REPORT.md)
+> **What this benchmark measures:** the deterministic grounding, refusal and safety layers run against the application code. It does not measure the quality of live Gemini answers.
+
+Full report available at: [`docs/EVALUATION_REPORT.md`](docs/EVALUATION_REPORT.md)
 
 ---
 
@@ -134,7 +138,7 @@ python -m venv venv
 # Activate virtual environment
 pip install -r requirements.txt
 
-# Run all 123 tests
+# Run all 136 tests
 pytest tests/ -v
 
 # Run API server
@@ -162,3 +166,51 @@ npm run dev
 - **DPDP Act 2023**: Minor consent gates, non-identifying session tokens, right to forget.
 - **Responsible AI**: Deterministic fallback classifiers, numeric grounding validation, prompt injection shields.
 - **Accessibility**: High contrast mode, min 48px tap targets, regional screen reader & text-to-speech integration.
+
+---
+
+## Loading the organisers' dataset
+
+The problem statement says dummy placement/earnings datasets are provided for evaluation. Everything this tool loads is labelled **dummy / synthetic** and is never marked verified.
+
+```
+python tools/import_dataset.py their_file.csv --out import.sql --replace-previous
+```
+
+Read the printed report (columns understood, rows skipped and why), paste `import.sql` into Supabase -> SQL Editor, run it, and reload the app with demo mode on. Columns are matched loosely (`trade`, `district`, `provider`, `year`, `sample_size`, `placement_rate`, `starting_salary`, `starting_salary_min/max`, `salary_after_3_years`, ...). A template is in `tools/sample_dataset.csv`.
+
+## Supabase migrations (run in order)
+
+All files in `supabase/migrations/` in filename order. The newest are `20261007000100` (labelled dummy seed data), `20261007000200` (canonical trade IDs), `20261009000100` (admin breakdowns, staff-only, groups under 5 hidden) and `20261009000200` (earnings ranges). Enable **Anonymous sign-ins** in Supabase Auth settings, because families use the app without an account.
+
+## Smoke test a deployed site
+
+```
+python tools/smoke_test.py https://your-app.vercel.app [--api https://your-api]
+```
+
+Checks pages, security headers, chat answers, crisis replies in four languages, wrong-trade protection, and dashboard behaviour. FAIL means fix it; INFO depends on whether demo mode is on.
+
+## Usability evidence
+
+Open `/research` on the facilitator's device. Record sessions with real parents and learners (participant codes only, never names), then export the CSV. Pre-populated with realistic field demo sessions to illustrate metrics; clear anytime with one tap.
+
+---
+
+## 🔍 System Limitations & Native Review Status
+
+To maintain 100% academic and hackathon honesty:
+- **Regional Languages Review**: Telugu, Hindi, and Tamil localized strings are translated following standard government glossary terms (NCVT, NSQF). Formal clinical and native speaker sign-off for regional crisis dialogues is recommended prior to state-wide deployment.
+- **Evaluation Scope**: The 60-scenario formal test benchmark measures the deterministic safety, PII sanitization, numerical validation, and grounding refusal boundaries.
+- **Real Datasets**: Until state/organizer administrative files are ingested via `tools/import_dataset.py`, outcomes are transparently displayed with `DEMO / SYNTHETIC DATA` badges.
+
+---
+
+## 📚 Technical Documentation Index
+
+- [🏛️ System Architecture & Fallback Tiering](docs/ARCHITECTURE.md)
+- [🛡️ Security Audit & Migration Review](docs/SECURITY_REVIEW.md)
+- [⚡ Efficiency, Latency & Token Cost Model](docs/EFFICIENCY_AND_COST.md)
+- [🚀 Future Roadmap: WhatsApp, IVR & Live Scraping](docs/FUTURE_ENHANCEMENTS.md)
+- [📊 Evaluation Report (Benchmark Results)](docs/EVALUATION_REPORT.md)
+

@@ -1,4 +1,11 @@
 import { useState } from 'react';
+import { useStore } from '../lib/store';
+
+const interestLabels: Record<string, Record<string, string>> = {
+  te: { tech: 'సాంకేతికం', health: 'ఆరోగ్యం', build: 'నిర్మాణం', art: 'కళ', food: 'ఆహారం', auto: 'ఆటోమొబైల్' },
+  hi: { tech: 'तकनीक', health: 'स्वास्थ्य', build: 'निर्माण', art: 'कला', food: 'खाद्य', auto: 'ऑटो' },
+  ta: { tech: 'தொழில்நுட்பம்', health: 'ஆரோக்கியம்', build: 'கட்டுமானம்', art: 'கலை', food: 'உணவு', auto: 'ஆட்டோமொபைல்' },
+};
 
 const icons = [
   { id: 'tech', label: 'Tech', icon: '💻' },
@@ -10,6 +17,8 @@ const icons = [
 ];
 
 export default function IconPicker({ selected, onChange }: { selected: string[], onChange: (val: string[]) => void }) {
+  const { language } = useStore();
+  const labelFor = (id: string, fallback: string) => interestLabels[language]?.[id] || fallback;
   const toggle = (id: string) => {
     if (selected.includes(id)) {
       onChange(selected.filter(s => s !== id));
@@ -32,7 +41,7 @@ export default function IconPicker({ selected, onChange }: { selected: string[],
           >
             <span className="text-4xl mb-2">{item.icon}</span>
             <span className={`text-sm font-medium ${isSelected ? 'text-orange-700' : 'text-gray-600'}`}>
-              {item.label}
+              {labelFor(item.id, item.label)}
             </span>
           </button>
         );

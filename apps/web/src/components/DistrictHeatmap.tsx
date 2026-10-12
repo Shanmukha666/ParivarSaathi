@@ -92,13 +92,13 @@ export default function DistrictHeatmap({ districts }: DistrictHeatmapProps) {
 
           <div className="flex gap-4 text-xs">
             <div className="bg-white border border-slate-200 px-3 py-2 rounded-lg">
-              <span className="text-slate-400 block font-medium">Negative Start Share</span>
+              <span className="text-slate-500 block font-medium">Negative Start Share</span>
               <span className="font-bold text-slate-900 text-sm">
                 {selected.share_neg_start !== undefined ? `${Math.round(selected.share_neg_start * 100)}%` : 'N/A'}
               </span>
             </div>
             <div className="bg-white border border-slate-200 px-3 py-2 rounded-lg">
-              <span className="text-slate-400 block font-medium">Escalation Rate</span>
+              <span className="text-slate-500 block font-medium">Escalation Rate</span>
               <span className="font-bold text-slate-900 text-sm">
                 {selected.escalation_rate !== undefined ? `${Math.round(selected.escalation_rate * 100)}%` : 'N/A'}
               </span>

@@ -1,5 +1,6 @@
 'use client';
 
+import ReadPageButton from '../../components/ReadPageButton';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchTrades } from '../../lib/api';
@@ -35,6 +36,7 @@ const tradeIcons: Record<string, string> = {
   'Data Entry & CSC Operator': '🖥️',
   'HVAC & AC Technician': '❄️',
   'Mobile Phone Repair Tech': '📱',
+  'Food Processing': '🍳',
 };
 
 export default function TradesPage() {
@@ -75,11 +77,11 @@ export default function TradesPage() {
       <ProgressDots total={3} current={2} />
 
       <div className="mb-4 flex items-center gap-2">
-        <Sparkles className="text-orange-500" size={26} />
+        <Sparkles className="text-orange-600" size={26} />
         <div>
-          <h1 className="text-2xl font-black text-slate-900">Recommended Pathways</h1>
+          <div className="flex items-center gap-3"><h1 className="text-2xl font-black text-slate-900 flex-1">Recommended Pathways</h1><ReadPageButton /></div>
           <p className="text-xs text-slate-500">
-            Selected for {profile.district || 'Adilabad'} based on {profile.classPassed || 'Class 10 Pass'}
+            Selected for {profile.district || 'Not available'} based on {profile.classPassed || 'Class 10 Pass'}
           </p>
         </div>
       </div>
@@ -123,16 +125,14 @@ export default function TradesPage() {
                         <h2 className="text-lg font-black text-slate-900 group-hover:text-orange-600 transition-colors">
                           {trade.name_en} {localName && <span className="text-sm font-semibold text-slate-500">({localName})</span>}
                         </h2>
-                        <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-                          <span>{trade.duration_months} Months</span>
-                          <span>•</span>
-                          <span>NSQF Level {trade.nsqf_level}</span>
-                          <span>•</span>
-                          <span className="text-emerald-700 font-semibold">High Demand</span>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs">
+                          <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-medium whitespace-nowrap">{trade.duration_months} Months</span>
+                          <span className="bg-orange-50 text-orange-800 px-2 py-0.5 rounded-md font-medium whitespace-nowrap">NSQF Level {trade.nsqf_level}</span>
+                          <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md font-semibold whitespace-nowrap">High Demand</span>
                         </div>
                       </div>
                     </div>
-                    <div className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-orange-500 group-hover:text-white transition-all">
+                    <div className="p-2 bg-slate-50 rounded-xl text-slate-500 group-hover:bg-orange-500 group-hover:text-white transition-all">
                       <ArrowRight size={18} />
                     </div>
                   </div>

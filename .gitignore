@@ -44,3 +44,10 @@ Thumbs.db
 
 # Local development databases
 *.db
+.env*.local
+.cursor/
+tmp-chat-body.json
+-e .venv/
+scratch/
+
+.pytest_cache/

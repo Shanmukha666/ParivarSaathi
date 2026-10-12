@@ -1,11 +1,17 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { decideAccess, type StaffRole } from './lib/access';
-import { hasSupabaseConfig } from './lib/demo-mode';
+import { hasSupabaseConfig, isDemoMode } from './lib/demo-mode';
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
+  // Explicit demo mode: staff pages are viewable; the data APIs still authorize and only
+  // serve clearly labelled synthetic data to anonymous callers.
+  if (isDemoMode()) return response;
   if (!hasSupabaseConfig()) {
+    if (process.env.NODE_ENV === 'production' && !isDemoMode()) {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
     return response;
   }
 

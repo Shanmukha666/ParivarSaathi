@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { sendChatMessage, createSession, createManualEscalation } from '../../lib/api';
+import { sendChatMessage, createSession, createManualEscalation, patchSession } from '../../lib/api';
 import { useStore } from '../../lib/store';
 import SpeakerToggle from '../../components/SpeakerToggle';
 import ChatMessage from '../../components/ChatMessage';
@@ -26,7 +26,7 @@ interface MessageItem {
 
 export default function ChatPage() {
   const router = useRouter();
-  const { language, sessionId, setSessionId, profile } = useStore();
+  const { language, sessionId, setSessionId, profile, isHydrated } = useStore();
   const t = useTranslation(language);
   const [speaker, setSpeaker] = useState<'learner' | 'parent'>('learner');
   const [messages, setMessages] = useState<MessageItem[]>([]);
@@ -44,32 +44,48 @@ export default function ChatPage() {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // Initial welcome message and session initialization
+  // Wait for persisted state before creating a server session. This prevents a
+  // stale/default profile from becoming the chat context.
   useEffect(() => {
+    if (!isHydrated) return;
+
     async function init() {
+      if (!profile.selectedTradeId) {
+        router.replace('/trades');
+        return;
+      }
+      if (profile.consent !== true) {
+        router.replace('/consent');
+        return;
+      }
+
       try {
-        await ensureFamilySession().catch(() => null);
+        await ensureFamilySession();
         let currentSid = sessionId;
-        if (!currentSid) {
+
+        if (currentSid) {
           try {
-            const newSess = await createSession({
-              lang: language || 'en',
-              state: profile.state || 'Telangana',
-              district: profile.district || 'Warangal',
-              user_role: profile.role || 'both',
-              learner_class: profile.classPassed || 'Class 10 Pass',
-              income_bracket: profile.income || '₹1 - 3 Lakhs',
-              consent: profile.consent || true,
-              selected_trade_id: profile.selectedTradeId || 1,
-            });
-            currentSid = newSess.id;
-            setSessionId(newSess.id);
-          } catch (e) {
-            console.warn('Session creation fallback active', e);
-            currentSid = '00000000-0000-4000-8000-000000000001';
-            setSessionId(currentSid);
+            await patchSession(currentSid, { selected_trade_id: profile.selectedTradeId });
+          } catch {
+            currentSid = null;
           }
         }
+
+        if (!currentSid) {
+          const newSess = await createSession({
+            lang: language || 'en',
+            state: profile.state || 'Telangana',
+            district: profile.district || 'Warangal',
+            user_role: profile.role || 'both',
+            learner_class: profile.classPassed || 'Class 10 Pass',
+            income_bracket: profile.income || '₹1 - 3 Lakhs',
+            consent: true,
+            selected_trade_id: profile.selectedTradeId,
+          });
+          currentSid = newSess.id;
+          setSessionId(newSess.id);
+        }
+
         setActiveSessionId(currentSid);
 
         const initialAiMsg: MessageItem = {
@@ -77,24 +93,25 @@ export default function ChatPage() {
           role: 'assistant',
           speaker: 'ai',
           content: t('chat_welcome', { trade: profile.selectedTradeName || t('default_trade') }),
-          suggested_chips: [
-            t('chip_earnings'),
-            t('chip_safety'),
-            t('chip_degree')
-          ]
+          suggested_chips: [t('chip_earnings'), t('chip_safety'), t('chip_degree')],
         };
         setMessages([initialAiMsg]);
         if (ttsEnabled) {
-          try {
-            speakText(initialAiMsg.content, language);
-          } catch {}
+          try { speakText(initialAiMsg.content, language); } catch {}
         }
       } catch (err) {
         console.error('Chat init error:', err);
+        setMessages([{
+          id: 'init-error',
+          role: 'assistant',
+          speaker: 'ai',
+          content: t('verified_data_unavailable'),
+          suggested_chips: [t('retry_message'), t('talk_to_counsellor')],
+        }]);
       }
     }
     init();
-  }, []);
+  }, [isHydrated, sessionId, profile.selectedTradeId, profile.selectedTradeName, profile.consent, profile.state, profile.district, profile.role, profile.classPassed, profile.income, language, router, setSessionId]);
 
   const handleSend = async (textToSend: string) => {
     const originalChipText = textToSend;
@@ -102,16 +119,22 @@ export default function ChatPage() {
       textToSend = failedText;
     }
     if (originalChipText === t('talk_to_counsellor')) {
-      // #region agent log
-      fetch('http://127.0.0.1:7759/ingest/962b743e-7592-43f7-a05a-48acb68040bf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'885e82'},body:JSON.stringify({sessionId:'885e82',runId:'post-fix',hypothesisId:'E',location:'chat/page.tsx:handleSend',message:'counsellor chip opens escalate modal',data:{originalChipText,activeSessionId},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       setShowEscalateModal(true);
       return;
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7759/ingest/962b743e-7592-43f7-a05a-48acb68040bf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'885e82'},body:JSON.stringify({sessionId:'885e82',runId:'post-fix',hypothesisId:'E',location:'chat/page.tsx:handleSend',message:'handleSend entry',data:{originalChipText,mappedText:textToSend,isRetryChip:originalChipText===t('retry_message'),failedTextSet:Boolean(failedText),activeSessionId,speaker,chipMessageCount:messages.filter(m=>m.suggested_chips&&m.suggested_chips.length>0).length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (!textToSend.trim() || loading) return;
+
+    if (!activeSessionId) {
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        speaker: 'ai',
+        content: t('verified_data_unavailable'),
+        citations: [],
+        suggested_chips: [t('retry_message')],
+      }]);
+      return;
+    }
 
     const userMessage: MessageItem = {
       id: Date.now().toString(),
@@ -127,7 +150,8 @@ export default function ChatPage() {
 
     try {
       const response = await sendChatMessage({
-        session_id: activeSessionId || '00000000-0000-4000-8000-000000000001',
+        session_id: activeSessionId,
+        trade_id: profile.selectedTradeId ?? undefined,
         speaker,
         text: textToSend,
         lang: language || 'en',
@@ -143,9 +167,6 @@ export default function ChatPage() {
       };
 
       setMessages(prev => [...prev, aiMessage]);
-      // #region agent log
-      fetch('http://127.0.0.1:7759/ingest/962b743e-7592-43f7-a05a-48acb68040bf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'885e82'},body:JSON.stringify({sessionId:'885e82',runId:'post-fix',hypothesisId:'A',location:'chat/page.tsx:handleSend',message:'chat reply accepted',data:{replyPreview:String(response.reply||'').slice(0,80),chipCount:response.suggested_chips?.length||0},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
 
       if (response.escalate) {
         setEscalated(true);
@@ -156,9 +177,6 @@ export default function ChatPage() {
       }
     } catch (err) {
       console.error(err);
-      // #region agent log
-      fetch('http://127.0.0.1:7759/ingest/962b743e-7592-43f7-a05a-48acb68040bf',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'885e82'},body:JSON.stringify({sessionId:'885e82',runId:'post-fix',hypothesisId:'A',location:'chat/page.tsx:handleSend',message:'sendChatMessage threw; showing verified_data_unavailable',data:{error:err instanceof Error?err.message:String(err),textLen:textToSend.length,activeSessionId},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       const fallbackAi: MessageItem = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -179,8 +197,9 @@ export default function ChatPage() {
 
   const handleManualEscalate = async (phone: string) => {
     try {
+      if (!activeSessionId) throw new Error('No active session');
       await createManualEscalation({
-        session_id: activeSessionId || '00000000-0000-4000-8000-000000000001',
+        session_id: activeSessionId,
         reason: 'Family requested direct counsellor callback via UI',
         callback_phone: phone,
         callback_phone_consent: callbackConsent,
@@ -205,13 +224,13 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 h-[100dvh]">
       {/* Sticky Accessible Top Bar */}
-      <header className="bg-white px-4 py-3 shadow-sm border-b border-slate-200 z-10 sticky top-0 flex flex-col gap-3">
+      <header className="chat-header px-4 py-3 z-10 sticky top-0 flex flex-col gap-3">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🏠</span>
+            <span className="brand-mark" aria-hidden="true">↗</span>
             <div>
-              <h1 className="text-lg font-bold text-slate-900 leading-tight">Parivar Path</h1>
-              <p className="text-xs text-slate-500">{profile.district || 'Adilabad'} • {profile.selectedTradeName || t('default_trade')}</p>
+              <h1 className="font-display text-lg font-extrabold tracking-tight text-ink leading-tight">Parivar Path</h1>
+              <p className="text-xs text-slate-500">{profile.district || 'Not available'} • {profile.selectedTradeName || t('default_trade')}</p>
             </div>
           </div>
 
@@ -225,7 +244,7 @@ export default function ChatPage() {
               title={ttsEnabled ? t('mute_ai_voice') : t('enable_ai_voice')}
               aria-label={ttsEnabled ? t('mute_ai_voice') : t('enable_ai_voice')}
               className={`p-2.5 rounded-xl border transition-colors min-h-[48px] min-w-[48px] flex items-center justify-center ${
-                ttsEnabled ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-slate-100 border-slate-200 text-slate-400'
+                ttsEnabled ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-slate-100 border-slate-200 text-slate-500'
               }`}
             >
               {ttsEnabled ? <Volume2 size={22} /> : <VolumeX size={22} />}

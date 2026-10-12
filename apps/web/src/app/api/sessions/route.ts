@@ -1,47 +1,45 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '../../../lib/supabase-server';
 import { enforceRateLimit } from '../../../lib/rate-limit';
-import { demoSessionResponse, hasSupabaseConfig } from '../../../lib/demo-mode';
+import { demoSessionResponse, hasSupabaseConfig, isDemoMode } from '../../../lib/demo-mode';
 
 const DISTRICTS = new Set(['Warangal', 'Adilabad', 'Karimnagar', 'Hyderabad']);
 
 export async function POST(request: Request) {
-  if (!hasSupabaseConfig()) {
-    const body = await request.json();
-    if (!['en', 'hi', 'te', 'ta'].includes(body.lang) || body.state !== 'Telangana' || !DISTRICTS.has(body.district) || body.consent !== true) {
-      return NextResponse.json({ error: 'Unsupported location, language, or consent' }, { status: 400 });
+  const body = await request.json();
+
+  if (!['en', 'hi', 'te', 'ta'].includes(body.lang) || body.state !== 'Telangana' || !DISTRICTS.has(body.district) || body.consent !== true) {
+    return NextResponse.json({ error: 'Unsupported location, language, or consent' }, { status: 400 });
+  }
+
+  if (isDemoMode()) {
+    try {
+      return NextResponse.json(demoSessionResponse(body), { status: 201 });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid demo session' }, { status: 400 });
     }
-    return NextResponse.json(demoSessionResponse(body), { status: 201 });
+  }
+
+  if (!hasSupabaseConfig()) {
+    return NextResponse.json({ error: 'Supabase is not configured' }, { status: 503 });
   }
 
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
-
-  // If user is not authenticated, proxy to FastAPI backend for anonymous sessions
-  if (!user) {
-    const body = await request.json();
-    try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const backendRes = await fetch(`${backendUrl}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (backendRes.ok) {
-        const data = await backendRes.json();
-        return NextResponse.json(data, { status: 201 });
-      }
-    } catch { /* fall through to demo */ }
-    return NextResponse.json(demoSessionResponse(body), { status: 201 });
-  }
+  if (!user) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
   if (!enforceRateLimit(`session:${user.id}`, 10)) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': '60' } });
   }
 
-  const body = await request.json();
-  if (!['en', 'hi', 'te', 'ta'].includes(body.lang) || body.state !== 'Telangana' || !DISTRICTS.has(body.district) || body.consent !== true) {
-    return NextResponse.json({ error: 'Unsupported location, language, or consent' }, { status: 400 });
+  if (body.selected_trade_id != null) {
+    const { data: trade, error: tradeError } = await supabase
+      .from('trades')
+      .select('id')
+      .eq('id', body.selected_trade_id)
+      .maybeSingle();
+    if (tradeError) return NextResponse.json({ error: 'Trade data unavailable' }, { status: 503 });
+    if (!trade) return NextResponse.json({ error: 'Selected trade not found' }, { status: 400 });
   }
 
   const { data, error } = await supabase.from('sessions').insert({
@@ -58,6 +56,9 @@ export async function POST(request: Request) {
     consented_at: new Date().toISOString(),
   }).select().single();
 
-  if (error) return NextResponse.json({ error: 'Could not create session' }, { status: 500 });
+  if (error) {
+    console.error('Session insert failed', error);
+    return NextResponse.json({ error: 'Could not create session' }, { status: 500 });
+  }
   return NextResponse.json(data, { status: 201 });
 }

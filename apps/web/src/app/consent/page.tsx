@@ -33,7 +33,7 @@ export default function ConsentPage() {
 
         <div className="space-y-6 mt-10">
           <div className="flex gap-4 items-start bg-orange-50 p-4 rounded-xl">
-            <User className="text-orange-500 shrink-0" size={32} />
+            <User className="text-orange-600 shrink-0" size={32} />
             <p className="text-xl font-medium text-gray-800">{t('consent_point1')}</p>
           </div>
           

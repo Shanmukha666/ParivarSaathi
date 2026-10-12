@@ -2,6 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { isDemoMode } from '../../lib/demo-mode';
 
 export default function CounsellorLogin() {
   const router = useRouter();
@@ -14,13 +15,14 @@ export default function CounsellorLogin() {
     try {
       setLoading(true);
       setError('');
-      if (!supabase) {
+      if (!supabase && isDemoMode()) {
         if (email.includes('counsellor') || password === 'demo123') {
           router.push('/counsellor/dashboard');
           return;
         }
         throw new Error('Invalid credentials');
       }
+      if (!supabase) throw new Error('Authentication is not configured');
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) throw signInError;
       router.push('/counsellor/dashboard');

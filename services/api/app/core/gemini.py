@@ -31,14 +31,17 @@ async def generate_text(
     if not key:
         raise GeminiNotConfigured("GEMINI_API_KEY is not configured")
 
-    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     payload = {
         "system_instruction": {"parts": [{"text": system_instruction}]},
         "contents": list(contents),
         "generation_config": {
             "temperature": temperature,
-            "max_output_tokens": max_output_tokens,
+            # Gemini 3 "thinks" by default and thinking tokens count toward this cap,
+            # so keep thinking low and leave headroom or replies can come back empty.
+            "max_output_tokens": max(max_output_tokens, 1024),
+            "thinking_config": {"thinking_level": "low"},
         },
     }
 

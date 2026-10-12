@@ -193,12 +193,17 @@ async def list_providers(
     state: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(Provider)
+    stmt = select(Provider).where(
+        Provider.verified.is_(True),
+        Provider.is_synthetic.is_(False),
+    )
     if district:
         stmt = stmt.where(func.lower(Provider.district) == district.lower())
+        if state:
+            stmt = stmt.where(func.lower(Provider.state) == state.lower())
     elif state:
         stmt = stmt.where(func.lower(Provider.state) == state.lower())
-        
+
     stmt = stmt.order_by(Provider.name).limit(20)
     result = await db.execute(stmt)
     providers = result.scalars().all()

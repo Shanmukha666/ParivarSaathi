@@ -175,7 +175,8 @@ async def generate_summary_card(req: SummaryCardRequest, current_user=Depends(fa
     sample_size = outcomes.get("sample_size")
     cohort_year = outcomes.get("cohort_year")
     source_scope = outcomes.get("scope_label")
-    source_name = outcomes.get("source")
+    source = outcomes.get("source") or {}
+    source_name = source.get("publisher") if isinstance(source, dict) else source
 
     providers_data = await find_providers(trade_id=trade_id, state=state, district=district, db=db)
     providers = providers_data.get("providers", [])

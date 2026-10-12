@@ -16,41 +16,93 @@ interface AppState {
   isHydrated: boolean;
 }
 
+const STORAGE_KEY = 'parivar_path_state';
+const STORAGE_VERSION = 2;
+
+const defaultProfile: ExtendedProfile = {
+  state: 'Telangana',
+  district: 'Warangal',
+  classPassed: 'Class 10 Pass',
+  income: '₹1 - 3 Lakhs',
+  role: 'both',
+  consent: false,
+  selectedTradeId: undefined,
+  selectedTradeName: undefined,
+  interests: [],
+};
+
 const defaultState: AppState = {
   language: 'en',
   sessionId: null,
-  profile: {
-    state: 'Telangana',
-    district: 'Warangal',
-    classPassed: 'Class 10 Pass',
-    income: '₹1 - 3 Lakhs',
-    role: 'both',
-    consent: true,
-    selectedTradeId: undefined,
-selectedTradeName: undefined,
-interests: [],
-  },
+  profile: defaultProfile,
   isHydrated: false,
 };
 
 let globalState: AppState = { ...defaultState };
-
 let listeners: Array<(state: AppState) => void> = [];
+
+function persistState() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: STORAGE_VERSION,
+        language: globalState.language,
+        sessionId: globalState.sessionId,
+        profile: globalState.profile,
+      }),
+    );
+    // Remove the legacy duplicate so an older value can never win on hydration.
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage is optional; in-memory state remains authoritative for this tab.
+  }
+}
 
 function setGlobalState(newState: Partial<AppState>) {
   globalState = { ...globalState, ...newState };
+  persistState();
+  listeners.forEach((listener) => listener(globalState));
+}
+
+function setLanguage(lang: string) {
+  if (isSupportedLanguage(lang)) setGlobalState({ language: lang });
+}
+
+function setSessionId(id: string | null) {
+  setGlobalState({ sessionId: id });
+}
+
+function updateProfile(updates: Partial<ExtendedProfile>) {
+  setGlobalState({
+    profile: { ...globalState.profile, ...updates },
+  });
+}
+
+function setSelectedTrade(id: number, name: string) {
+  setGlobalState({
+    profile: {
+      ...globalState.profile,
+      selectedTradeId: id,
+      selectedTradeName: name,
+    },
+  });
+}
+
+function resetStore() {
   if (typeof window !== 'undefined') {
-    const payload = JSON.stringify({
-      language: globalState.language,
-      sessionId: globalState.sessionId,
-      profile: globalState.profile,
-    });
     try {
-      localStorage.setItem('parivar_path_state', payload);
-      sessionStorage.setItem('parivar_path_state', payload);
+      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(STORAGE_KEY);
     } catch {}
   }
-  listeners.forEach(l => l(globalState));
+  globalState = {
+    ...defaultState,
+    profile: { ...defaultProfile },
+    isHydrated: true,
+  };
+  listeners.forEach((listener) => listener(globalState));
 }
 
 export function useStore() {
@@ -59,44 +111,60 @@ export function useStore() {
   useEffect(() => {
     if (typeof window !== 'undefined' && !globalState.isHydrated) {
       try {
-        const saved = localStorage.getItem('parivar_path_state') || sessionStorage.getItem('parivar_path_state');
-        if (saved) {
-          globalState = { ...defaultState, ...JSON.parse(saved), isHydrated: true };
-          setState({ ...globalState });
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw) as {
+            version?: number;
+            language?: string;
+            sessionId?: string | null;
+            profile?: ExtendedProfile;
+          };
+
+          const savedLanguage = isSupportedLanguage(saved.language || '')
+            ? saved.language as Language
+            : defaultState.language;
+
+          globalState = {
+            ...defaultState,
+            language: savedLanguage,
+            sessionId: saved.sessionId ?? null,
+            profile: {
+              ...defaultProfile,
+              ...(saved.profile || {}),
+            },
+            isHydrated: true,
+          };
         } else {
-          globalState = { ...globalState, isHydrated: true };
+          globalState = {
+            ...globalState,
+            profile: { ...defaultProfile },
+            isHydrated: true,
+          };
         }
-      } catch (e) {
-        console.warn('Storage hydration failed', e);
+        setState({ ...globalState, profile: { ...globalState.profile } });
+      } catch (error) {
+        console.warn('Storage hydration failed; using defaults', error);
+        globalState = {
+          ...defaultState,
+          profile: { ...defaultProfile },
+          isHydrated: true,
+        };
+        setState({ ...globalState });
       }
     }
+
     listeners.push(setState);
     return () => {
-      listeners = listeners.filter(l => l !== setState);
+      listeners = listeners.filter((listener) => listener !== setState);
     };
   }, []);
 
   return {
     ...state,
-    setLanguage: (lang: string) => {
-      if (isSupportedLanguage(lang)) setGlobalState({ language: lang });
-    },
-    setSessionId: (id: string) => {
-      setGlobalState({ sessionId: id });
-    },
-    updateProfile: (updates: Partial<ExtendedProfile>) => {
-      setGlobalState({ profile: { ...globalState.profile, ...updates } });
-    },
-    setSelectedTrade: (id: number, name: string) => {
-      setGlobalState({
-        profile: { ...globalState.profile, selectedTradeId: id, selectedTradeName: name }
-      });
-    },
-    resetStore: () => {
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('parivar_path_state');
-      }
-      setGlobalState(defaultState);
-    }
+    setLanguage,
+    setSessionId,
+    updateProfile,
+    setSelectedTrade,
+    resetStore,
   };
 }

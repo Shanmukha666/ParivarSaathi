@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { fetchAdminMetrics } from '../../../lib/api';
 
+import DistrictHeatmap from '../../../components/DistrictHeatmap';
+
 const concerns = [
   ['income_potential', 'Income'],
   ['job_security', 'Job security'],
@@ -105,7 +107,30 @@ export default function AdminDashboard() {
       </section>
 
       {error && <div role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-4">{error}</div>}
+      {metrics?.is_demo && <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 text-sm"><b>Synthetic demo data.</b> Shown because demo mode is on. Not real families.</div>}
       {metrics?.insufficient_data && <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4">Insufficient data for the selected filters.</div>}
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <h2 className="font-bold text-slate-900 mb-4">WHERE? District resistance heatmap</h2>
+        <DistrictHeatmap districts={metrics?.heatmap} />
+      </section>
+
+      {metrics?.engagement_funnel && (
+        <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <h2 className="font-bold text-slate-900 mb-4">ENGAGEMENT: how far families get</h2>
+          <ul className="space-y-3">
+            {(metrics.engagement_funnel as Array<{ stage: string; count: number | null }>).map((s) => {
+              const max = Math.max(...(metrics.engagement_funnel as Array<{ count: number | null }>).map((x) => x.count ?? 0), 1);
+              return (
+                <li key={s.stage}>
+                  <div className="flex justify-between text-sm font-semibold text-slate-800"><span>{s.stage.replace('_', ' ')}</span><span>{s.count ?? 'Insufficient data'}</span></div>
+                  <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-orange-600" style={{ width: `${((s.count ?? 0) / max) * 100}%` }} /></div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Distribution title="WHY? Concern distribution" values={metrics?.concern_distribution} />

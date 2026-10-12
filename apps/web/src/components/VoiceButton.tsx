@@ -101,7 +101,7 @@ export default function VoiceButton({ onTranscript }: VoiceButtonProps) {
   };
 
   return (
-    <div className="flex items-center gap-2" aria-live="polite">
+    <div className="relative flex items-center gap-2" aria-live="polite">
       <button
         type="button"
         onClick={listening ? stopListening : startListening}
@@ -117,7 +117,7 @@ export default function VoiceButton({ onTranscript }: VoiceButtonProps) {
       >
         {listening ? <MicOff size={22} /> : <Mic size={22} />}
       </button>
-      <div className="text-xs text-slate-600 max-w-[14rem]">
+      <div className={state === 'idle' ? 'sr-only' : 'voice-pop text-xs text-slate-700'}>
         {state === 'listening' && <span>{t('voice_recording')}</span>}
         {state === 'processing' && <span>{t('voice_processing')}</span>}
         {state === 'error' && errorKey && (

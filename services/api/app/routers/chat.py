@@ -6,9 +6,7 @@ from app.models.models import Session, Message, Trade
 from app.core.orchestrator import handle_turn
 from app.core.validator import SAFE_FALLBACK
 import uuid
-import json
 import logging
-import time
 from sqlalchemy import select
 from app.routers.auth import family_user
 from app.core.rate_limit import enforce_rate_limit
@@ -18,23 +16,6 @@ from app.core.tools import get_outcomes
 
 logger = logging.getLogger(__name__)
 
-def _debug_log(hypothesis_id: str, message: str, data: dict) -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "885e82",
-            "runId": "post-fix",
-            "hypothesisId": hypothesis_id,
-            "location": "routers/chat.py:send_message",
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with open(r"C:\Users\SIREESHA DASARI\OneDrive\Desktop\Vocational\debug-885e82.log", "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
 def _to_chat_response(payload: dict) -> ChatResponse:
     chips = payload.get("suggested_chips") or []
@@ -55,6 +36,10 @@ RATE_LIMIT_JOINT = 20
 @router.post("/sessions", response_model=SessionResponse)
 async def create_session(session_data: SessionCreate, current_user=Depends(family_user), db: AsyncSession = Depends(get_db)):
     enforce_rate_limit(f"session:{current_user.id}", RATE_LIMIT_SESSION)
+    if session_data.selected_trade_id is not None:
+        trade_result = await db.execute(select(Trade.id).where(Trade.id == session_data.selected_trade_id))
+        if trade_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected trade not found")
     new_id = uuid.uuid4()
     session = Session(
         id=new_id,
@@ -82,7 +67,10 @@ async def update_session(id: uuid.UUID, session_data: SessionUpdate, current_use
     session = result.scalars().first()
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
-    
+    trade_result = await db.execute(select(Trade.id).where(Trade.id == session_data.selected_trade_id))
+    if trade_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected trade not found")
+
     session.selected_trade_id = session_data.selected_trade_id
     await db.commit()
     await db.refresh(session)
@@ -97,17 +85,15 @@ async def send_message(chat_req: ChatRequest, current_user=Depends(family_user),
     session = result.scalars().first()
 
     if not session:
-        _debug_log("B", "fastapi session not found", {"session_id": str(chat_req.session_id)})
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    if not session.selected_trade_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Selected trade is required")
 
     try:
         response = await handle_turn(session, chat_req.speaker, chat_req.text, chat_req.lang, db)
-        citation_types = [type(item).__name__ for item in (response.get("citations") or [])]
-        _debug_log("F", "handle_turn ok", {"citation_types": citation_types, "reply_len": len(str(response.get("reply") or ""))})
         return _to_chat_response(response)
     except Exception as exc:
         logger.exception("chat turn failed")
-        _debug_log("F", "handle_turn failed; returning safe fallback", {"error": str(exc), "error_type": type(exc).__name__})
         fallback = {
             "reply": SAFE_FALLBACK.get(chat_req.lang, SAFE_FALLBACK["en"]),
             "citations": [],

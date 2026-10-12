@@ -1,7 +1,32 @@
 import type { Source } from './types';
 import { supabase } from './supabase';
+import { isDemoMode } from './demo-mode';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
+function normaliseInterest(value: string) {
+  return value.trim().toLowerCase();
+}
+
+const INTEREST_KEYWORDS: Record<string, string[]> = {
+  tech: ['it', 'data', 'computer', 'digital', 'electronics', 'technology'],
+  health: ['health', 'medical', 'care', 'wellness'],
+  build: ['plumber', 'construction', 'civil', 'fitter', 'building'],
+  art: ['beauty', 'beautician', 'wellness', 'fashion', 'tailoring', 'textile', 'art'],
+  food: ['food', 'cook', 'culinary', 'hospitality', 'processing'],
+  auto: ['auto', 'automotive', 'mechanic', 'vehicle'],
+  electrical: ['electrical', 'electrician', 'electronics', 'solar', 'renewable'],
+  mechanical: ['mechanical', 'fitter', 'auto', 'cnc', 'hvac', 'welder'],
+};
+
+function matchesInterests(trade: any, interests: string[]) {
+  const text = `${String(trade.name_en || '')} ${String(trade.sector || '')} ${(trade.job_roles || []).join(' ')}`.toLowerCase();
+  return interests.some((interest) => {
+    const key = normaliseInterest(interest);
+    const keywords = INTEREST_KEYWORDS[key] || [key];
+    return keywords.some((keyword) => text.includes(keyword));
+  });
+}
 
 export interface SessionPayload {
   lang: string;
@@ -16,6 +41,7 @@ export interface SessionPayload {
 
 export interface ChatTurnRequest {
   session_id: string;
+  trade_id?: number;
   speaker: 'learner' | 'parent' | 'counsellor';
   text: string;
   lang: string;
@@ -30,24 +56,38 @@ export interface ChatTurnResponse {
 }
 
 export async function createSession(payload: SessionPayload) {
+  if (!payload.selected_trade_id || payload.selected_trade_id <= 0) {
+    throw new Error('A selected trade is required before creating a session');
+  }
+
   try {
     const res = await fetch('/api/sessions', {
       method: 'POST',
       headers: await getSupabaseAuthHeaders(),
       body: JSON.stringify(payload),
     });
-
     if (res.ok) return res.json();
-  } catch {}
+    const body = await res.json().catch(() => null);
+    if (res.status >= 400 && res.status < 500) {
+      throw new Error(body?.error || 'Unable to create session');
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message !== 'Failed to fetch') throw error;
+  }
+
+  if (isDemoMode() && !API_BASE_URL && !supabase) {
+    const { demoSessionResponse } = await import('./demo-mode');
+    return demoSessionResponse(payload as unknown as Record<string, unknown>);
+  }
+
+  if (supabase || !API_BASE_URL) throw new Error('Session service is not configured');
 
   const res = await fetch(`${API_BASE_URL}/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-
   if (!res.ok) throw new Error('Failed to create session');
-
   return res.json();
 }
 
@@ -69,32 +109,27 @@ export async function sendChatMessage(
       body: JSON.stringify(data),
     });
 
-    let nextBody: unknown = null;
+    const body = await res.json().catch(() => null);
+    if (isChatTurnResponse(body)) return body;
+    if (res.status >= 400 && res.status < 500) {
+      throw new Error(body?.error || 'Chat request was rejected');
+    }
+  } catch (error) {
+    if (error instanceof Error && !['Failed to fetch', 'NetworkError'].includes(error.message)) {
+      throw error;
+    }
+  }
 
-    try {
-      nextBody = await res.json();
-    } catch {}
+  if (supabase || !API_BASE_URL) throw new Error('Chat service is not configured');
 
-    if (isChatTurnResponse(nextBody)) return nextBody;
-  } catch {}
-
-  try {
-    const res = await fetch(`${API_BASE_URL}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-
-    let fastapiBody: unknown = null;
-
-    try {
-      fastapiBody = await res.json();
-    } catch {}
-
-    if (isChatTurnResponse(fastapiBody)) return fastapiBody;
-  } catch {}
-
-  throw new Error('Failed to send message');
+  const res = await fetch(`${API_BASE_URL}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const body = await res.json().catch(() => null);
+  if (isChatTurnResponse(body)) return body;
+  throw new Error(body?.detail || body?.error || 'Failed to send message');
 }
 
 const DEMO_TRADES: Record<number, any> = {
@@ -123,8 +158,8 @@ const DEMO_TRADES: Record<number, any> = {
     },
   },
 
-  2: {
-    id: 2,
+  6: {
+    id: 6,
     name_en: 'Solar Technician',
     name_local: {
       te: 'సోలార్ టెక్నీషియన్',
@@ -147,8 +182,8 @@ const DEMO_TRADES: Record<number, any> = {
     },
   },
 
-  3: {
-    id: 3,
+  13: {
+    id: 13,
     name_en: 'Food Processing',
     name_local: {
       te: 'ఆహార ప్రాసెసింగ్',
@@ -177,140 +212,64 @@ export async function fetchTrades(
   interest?: string,
   state?: string
 ) {
+  const interests = (interest || '').split(',').map(normaliseInterest).filter(Boolean);
+
   if (supabase) {
     try {
-      const { data, error } = await supabase
-        .from('trades')
-        .select('*')
-        .order('id');
-
-      if (!error && data && data.length > 0) {
-        if (interest) {
-          const interests = interest
-            .split(',')
-            .map((item) => item.trim().toLowerCase())
-            .filter(Boolean);
-
-          const filtered = data.filter((trade: any) => {
-            const name = String(trade.name_en || '').toLowerCase();
-            const sector = String(trade.sector || '').toLowerCase();
-
-            return interests.some((item) => {
-              if (item === 'food') {
-                return (
-                  name.includes('food') ||
-                  name.includes('cook') ||
-                  name.includes('hospitality') ||
-                  sector.includes('food') ||
-                  sector.includes('hospitality')
-                );
-              }
-
-              if (item === 'electrical') {
-                return (
-                  name.includes('electric') ||
-                  name.includes('solar') ||
-                  sector.includes('electrical') ||
-                  sector.includes('renewable')
-                );
-              }
-
-              if (item === 'mechanical') {
-                return (
-                  name.includes('mechanic') ||
-                  name.includes('fitter') ||
-                  name.includes('welder') ||
-                  sector.includes('mechanical')
-                );
-              }
-
-              return name.includes(item) || sector.includes(item);
-            });
-          });
-
-          if (filtered.length > 0) {
-            return filtered;
-          }
-        }
-
-        return data;
+      const { data, error } = await supabase.from('trades').select('*').order('id');
+      if (!error && data) {
+        return interests.length ? data.filter((trade: any) => matchesInterests(trade, interests)) : data;
       }
-    } catch {}
-  }
-
-  try {
-    const params = new URLSearchParams();
-
-    if (district) params.append('district', district);
-    if (interest) params.append('interest', interest);
-    if (state) params.append('state', state);
-
-    const res = await fetch(`${API_BASE_URL}/trades?${params.toString()}`);
-
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch {}
-
-  if (interest) {
-    const interests = interest
-      .split(',')
-      .map((item) => item.trim().toLowerCase());
-
-    const demoTrades = Object.values(DEMO_TRADES).filter((trade: any) => {
-      const name = String(trade.name_en || '').toLowerCase();
-      const sector = String(trade.sector || '').toLowerCase();
-
-      return interests.some((item) => {
-        if (item === 'food') {
-          return name.includes('food') || sector.includes('food');
-        }
-
-        if (item === 'electrical') {
-          return (
-            name.includes('electric') ||
-            name.includes('solar') ||
-            sector.includes('electrical') ||
-            sector.includes('renewable')
-          );
-        }
-
-        return name.includes(item) || sector.includes(item);
-      });
-    });
-
-    if (demoTrades.length > 0) {
-      return demoTrades;
+    } catch (error) {
+      console.error('Supabase trade query failed', error);
     }
   }
 
-  return Object.values(DEMO_TRADES);
+  if (!supabase && API_BASE_URL) {
+    try {
+      const params = new URLSearchParams();
+      if (district) params.append('district', district);
+      if (interest) params.append('interest', interest);
+      if (state) params.append('state', state);
+      const res = await fetch(`${API_BASE_URL}/trades?${params.toString()}`);
+      if (res.ok) return await res.json();
+    } catch (error) {
+      console.error('Backend trade query failed', error);
+    }
+  }
+
+  if (isDemoMode()) {
+    const demo = Object.values(DEMO_TRADES);
+    return interests.length ? demo.filter((trade: any) => matchesInterests(trade, interests)) : demo;
+  }
+
+  throw new Error('Trade data is unavailable');
 }
 
 export async function fetchTradeDetail(id: number | string) {
+  const numId = Number(id);
+  if (!Number.isInteger(numId) || numId <= 0) throw new Error('Invalid trade id');
+
   if (supabase) {
     try {
-      const { data, error } = await supabase
-        .from('trades')
-        .select('*')
-        .eq('id', id)
-        .single();
-
+      const { data, error } = await supabase.from('trades').select('*').eq('id', numId).single();
       if (!error && data) return data;
-    } catch {}
+    } catch (error) {
+      console.error('Supabase trade detail query failed', error);
+    }
   }
 
-  try {
-    const res = await fetch(`${API_BASE_URL}/trades/${id}`);
-
-    if (res.ok) {
-      return await res.json();
+  if (!supabase && API_BASE_URL) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/trades/${numId}`);
+      if (res.ok) return await res.json();
+    } catch (error) {
+      console.error('Backend trade detail query failed', error);
     }
-  } catch {}
+  }
 
-  const numId = Number(id) || 1;
-
-  return DEMO_TRADES[numId] || DEMO_TRADES[1];
+  if (isDemoMode() && DEMO_TRADES[numId]) return DEMO_TRADES[numId];
+  throw new Error('Trade data is unavailable');
 }
 
 export async function fetchTradeOutcomes(
@@ -318,57 +277,42 @@ export async function fetchTradeOutcomes(
   district?: string,
   state?: string
 ) {
-  const params = new URLSearchParams({
-    trade_id: String(id),
-    state: state || 'Telangana',
-  });
-
+  const params = new URLSearchParams({ trade_id: String(id), state: state || 'Telangana' });
   if (district) params.set('district', district);
 
-  params.set('include_demo', 'true');
-
   let records: any[] = [];
-
   try {
     const res = await fetch(`/api/outcomes?${params.toString()}`);
-
-    if (res.ok) {
-      records = await res.json();
-    }
-  } catch {}
-
-  if (!records.length) {
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/outcomes?${params.toString()}`
-      );
-
-      if (res.ok) {
-        records = await res.json();
-      }
-    } catch {}
+    if (res.ok) records = await res.json();
+  } catch (error) {
+    console.error('Next outcomes query failed', error);
   }
+
+  if (!records.length && !supabase && API_BASE_URL) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/outcomes?${params.toString()}`);
+      if (res.ok) records = await res.json();
+    } catch (error) {
+      console.error('Backend outcomes query failed', error);
+    }
+  }
+
+  if (!records.length && isDemoMode()) {
+    const { demoOutcomeResponse } = await import('./demo-mode');
+    records = demoOutcomeResponse(Number(id), district, state);
+  }
+
+  if (!records.length) return { found: false };
 
   const latest = records[0];
-
-  if (!latest) {
-    return { found: false };
-  }
-
-  const values = Object.fromEntries(
-    records.map((r: any) => [
-      r.metric_key,
-      r.metric_value ?? r.metric_text,
-    ])
-  );
-
+  const values = Object.fromEntries(records.map((r: any) => [r.metric_key, r.metric_value ?? r.metric_text]));
   return {
     found: true,
-    is_synthetic: latest.is_synthetic,
-    verified:
-      latest.verification_status === 'verified' && !latest.is_synthetic,
+    is_synthetic: Boolean(latest.is_synthetic),
+    verified: latest.verification_status === 'verified' && !latest.is_synthetic,
     verification_status: latest.verification_status,
     verification_date: latest.verification_date,
+    verified_on: latest.verification_date,
     stale: records.some((r: any) => r.stale),
     sample_size: latest.sample_size,
     cohort_year: latest.year,
@@ -376,9 +320,12 @@ export async function fetchTradeOutcomes(
     ...values,
     placement_rate: values.placement_rate,
     avg_start_salary_inr: values.starting_earnings,
-    scope_label: `${latest.district || latest.state} ${
-      latest.district ? 'district' : 'state'
-    }`,
+    avg_mid_career_salary_inr: values.earnings_after_period,
+    start_salary_min: values.starting_earnings_min,
+    start_salary_max: values.starting_earnings_max,
+    salary_3yr_min: values.earnings_after_period_min,
+    salary_3yr_max: values.earnings_after_period_max,
+    scope_label: `${latest.district || latest.state} ${latest.district ? 'district' : 'state'}`,
   };
 }
 
@@ -389,36 +336,28 @@ export async function fetchTradePathway(id: number | string) {
         .from('pathways')
         .select('*')
         .eq('from_trade_id', id)
+        .in('verification_status', isDemoMode() ? ['verified', 'pending'] : ['verified'])
+        .in('is_synthetic', isDemoMode() ? [true, false] : [false])
         .order('step_order');
-
-      if (!error && data && data.length > 0) {
-        return {
-          found: true,
-          steps: data,
-        };
-      }
-    } catch {}
+      if (!error && data) return { found: data.length > 0, steps: data };
+    } catch (error) {
+      console.error('Supabase pathway query failed', error);
+    }
   }
 
-  try {
-    const res = await fetch(
-      `${API_BASE_URL}/trades/${id}/pathway`
-    );
-
-    if (res.ok) {
-      const data = await res.json();
-
-      return {
-        found: Boolean(data?.steps?.length),
-        steps: data.steps || [],
-      };
+  if (!supabase && API_BASE_URL) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/trades/${id}/pathway`);
+      if (res.ok) {
+        const data = await res.json();
+        return { found: Boolean(data?.steps?.length), steps: data?.steps || [] };
+      }
+    } catch (error) {
+      console.error('Backend pathway query failed', error);
     }
-  } catch {}
+  }
 
-  return {
-    found: false,
-    steps: [],
-  };
+  return { found: false, steps: [] };
 }
 
 export async function fetchTradeStory(
@@ -431,12 +370,9 @@ export async function fetchTradeStory(
     params.append('district', district);
   }
 
-  const res = await fetch(
-    `${API_BASE_URL}/trades/${id}/story?${params.toString()}`
-  );
-
+  if (!API_BASE_URL) return null;
+  const res = await fetch(`${API_BASE_URL}/trades/${id}/story?${params.toString()}`);
   if (!res.ok) return null;
-
   return res.json();
 }
 
@@ -449,39 +385,69 @@ export async function fetchProviders(
       let query = supabase
         .from('providers')
         .select('*')
-        .eq('state', state || 'Telangana');
-
-      if (district) {
-        query = query.eq('district', district);
-      }
-
-      const { data, error } = await query
-        .order('name')
-        .limit(20);
-
-      if (!error && data && data.length > 0) {
-        return data;
-      }
-    } catch {}
+        .eq('state', state || 'Telangana')
+        .in('is_synthetic', isDemoMode() ? [true, false] : [false]);
+      // Real providers must be verified; dummy providers (demo mode only) are labelled synthetic instead.
+      if (!isDemoMode()) query = query.eq('verified', true);
+      if (district) query = query.eq('district', district);
+      const { data, error } = await query.order('name').limit(20);
+      if (!error && data) return data;
+    } catch (error) {
+      console.error('Supabase provider query failed', error);
+    }
   }
 
-  const params = new URLSearchParams();
-
-  if (district) {
-    params.append('district', district);
+  if (!supabase && API_BASE_URL) {
+    try {
+      const params = new URLSearchParams();
+      if (district) params.append('district', district);
+      if (state) params.append('state', state);
+      const res = await fetch(`${API_BASE_URL}/providers?${params.toString()}`);
+      if (res.ok) return (await res.json()).filter((p: any) => isDemoMode() || (p.verified !== false && !p.is_synthetic));
+    } catch (error) {
+      console.error('Backend provider query failed', error);
+    }
   }
 
-  if (state) {
-    params.append('state', state);
+  return [];
+}
+
+// Adds each provider's own outcomes for the chosen trade (placement, starting earnings). Never invents values.
+export async function attachProviderOutcomes(providers: any[], tradeId?: number) {
+  if (!supabase || !tradeId || providers.length === 0) return providers;
+  try {
+    const demo = isDemoMode();
+    const { data, error } = await supabase
+      .from('outcome_metrics')
+      .select('provider_id, metric_key, metric_value, sample_size, year, is_synthetic')
+      .eq('trade_id', tradeId)
+      .in('provider_id', providers.map((p) => p.id))
+      .in('metric_key', ['placement_rate', 'starting_earnings'])
+      .in('verification_status', demo ? ['verified', 'pending'] : ['verified'])
+      .in('is_synthetic', demo ? [true, false] : [false]);
+    if (error || !data) return providers;
+    return providers.map((p) => {
+      const rows = data.filter((r: any) => r.provider_id === p.id);
+      const latest = (key: string) => rows.filter((r: any) => r.metric_key === key).sort((a: any, b: any) => (b.year ?? 0) - (a.year ?? 0))[0];
+      const placement = latest('placement_rate');
+      const earnings = latest('starting_earnings');
+      const any = placement || earnings;
+      return {
+        ...p,
+        outcomes: any
+          ? {
+              placement_rate: placement ? Number(placement.metric_value) : null,
+              starting_earnings: earnings ? Number(earnings.metric_value) : null,
+              sample_size: any.sample_size ?? null,
+              year: any.year ?? null,
+              is_synthetic: !!any.is_synthetic,
+            }
+          : null,
+      };
+    });
+  } catch {
+    return providers;
   }
-
-  const res = await fetch(
-    `${API_BASE_URL}/providers?${params.toString()}`
-  );
-
-  if (!res.ok) return [];
-
-  return res.json();
 }
 
 export async function fetchSchemes(
@@ -493,33 +459,28 @@ export async function fetchSchemes(
       const { data, error } = await supabase
         .from('schemes')
         .select('*')
-        .or(
-          `state.eq.${state || 'Telangana'},state.is.null`
-        );
-
-      if (!error && data && data.length > 0) {
-        return data;
-      }
-    } catch {}
+        .eq('verified', true)
+        .eq('is_synthetic', false)
+        .or(`state.eq.${state || 'Telangana'},state.is.null`);
+      if (!error && data) return data;
+    } catch (error) {
+      console.error('Supabase scheme query failed', error);
+    }
   }
 
-  const params = new URLSearchParams();
-
-  if (state) {
-    params.append('state', state);
+  if (!supabase && API_BASE_URL) {
+    try {
+      const params = new URLSearchParams();
+      if (state) params.append('state', state);
+      if (income_bracket) params.append('income_bracket', income_bracket);
+      const res = await fetch(`${API_BASE_URL}/schemes?${params.toString()}`);
+      if (res.ok) return (await res.json()).filter((s: any) => s.verified === true && s.is_synthetic === false);
+    } catch (error) {
+      console.error('Backend scheme query failed', error);
+    }
   }
 
-  if (income_bracket) {
-    params.append('income_bracket', income_bracket);
-  }
-
-  const res = await fetch(
-    `${API_BASE_URL}/schemes?${params.toString()}`
-  );
-
-  if (!res.ok) return [];
-
-  return res.json();
+  return [];
 }
 
 export async function fetchAdminMetrics(filters?: {
@@ -725,6 +686,7 @@ export async function createManualEscalation(data: {
 export async function getSummaryCardHtml(
   sessionId: string
 ) {
+  if (!API_BASE_URL) throw new Error('Summary service is not configured');
   const headers = await getSupabaseAuthHeaders();
 
   const res = await fetch(
@@ -750,6 +712,7 @@ export async function login(
   phone: string,
   pin: string
 ) {
+  if (!API_BASE_URL) throw new Error('Backend auth service is not configured');
   const res = await fetch(
     `${API_BASE_URL}/auth/login`,
     {

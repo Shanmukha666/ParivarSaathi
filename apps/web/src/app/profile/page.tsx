@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { TELANGANA_DISTRICTS } from '../../lib/demo-dashboard';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '../../lib/i18n';
 import { useStore } from '../../lib/store';
@@ -10,21 +11,31 @@ import TextToSpeech from '../../components/TextToSpeech';
 import { ChevronRight } from 'lucide-react';
 
 const stateDistricts: Record<string, string[]> = {
-  Telangana: ['Warangal', 'Adilabad', 'Karimnagar', 'Hyderabad'],
+  Telangana: ['Warangal', ...TELANGANA_DISTRICTS.filter((d) => d !== 'Warangal')],
 };
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { language, updateProfile } = useStore();
+  const { language, profile, isHydrated, updateProfile } = useStore();
   const t = useTranslation(language);
 
-  const [state, setState] = useState('Telangana');
-  const [district, setDistrict] = useState('Warangal');
-  const [role, setRole] = useState('both');
-  const [classPassed, setClassPassed] = useState('Class 10 Pass');
-  const [income, setIncome] = useState('₹1 - 3 Lakhs');
-  const [interests, setInterests] = useState<string[]>(['electrical', 'mechanical']);
+  const [state, setState] = useState(profile.state || 'Telangana');
+  const [district, setDistrict] = useState(profile.district || 'Warangal');
+  const [role, setRole] = useState(profile.role || 'both');
+  const [classPassed, setClassPassed] = useState(profile.classPassed || 'Class 10 Pass');
+  const [income, setIncome] = useState(profile.income || '₹1 - 3 Lakhs');
+  const [interests, setInterests] = useState<string[]>(profile.interests || []);
   const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    setState(profile.state || 'Telangana');
+    setDistrict(profile.district || 'Warangal');
+    setRole(profile.role || 'both');
+    setClassPassed(profile.classPassed || 'Class 10 Pass');
+    setIncome(profile.income || '₹1 - 3 Lakhs');
+    setInterests(profile.interests || []);
+  }, [isHydrated, profile]);
 
   const handleStateChange = (newState: string) => {
     setState(newState);

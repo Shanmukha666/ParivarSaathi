@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, requireRole } from '../../../../lib/authorization';
+import { isDemoMode } from '../../../../lib/demo-mode';
+import { demoCounsellorQueue } from '../../../../lib/demo-dashboard';
 
 export async function GET() {
   const { supabase, user } = await getAuthenticatedUser();
   const denied = requireRole(user, 'counsellor');
-  if (denied) return denied;
+  if (denied) return isDemoMode() ? NextResponse.json(demoCounsellorQueue()) : denied;
 
   try {
     const { data: escalations, error } = await supabase

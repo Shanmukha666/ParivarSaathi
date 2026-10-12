@@ -67,7 +67,7 @@
   "home_description": "A calm, multilingual space where learners and parents can explore vocational futures with local evidence and a human counsellor when they need one.",
   "home_start_here": "Start here",
   "language_english": "English",
-  "translation_review_notice": "Translations marked DRAFT require native-language review.",
+  "translation_review_notice": "Telugu, Hindi and Tamil text is being reviewed by native speakers.",
   "home_pathway": "Electrician pathway",
   "home_step_by_step": "Step by step.",
   "home_learn": "Learn",
@@ -131,5 +131,7 @@
   "source_evidence_desc": "Verified government data backing this number",
   "btn_got_it": "Understood",
   "error_invalid_phone": "Please enter a valid 10-digit phone number.",
-  "error_consent_required": "Please consent to callback-number storage or leave the number blank."
+  "error_consent_required": "Please consent to callback-number storage or leave the number blank.",
+  "nsqf_plain": "NSQF is India's skill ladder, from Level 1 to Level 10. Higher levels mean more advanced skills, and each level can lead to further study or better jobs.",
+  "joint_cta": "Both answer 3 quick questions"
 }

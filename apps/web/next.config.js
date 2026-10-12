@@ -1,3 +1,14 @@
+const isProd = process.env.NODE_ENV === 'production';
+const originOf = (u) => { try { return new URL(u).origin; } catch { return ''; } };
+const supabaseOrigin = originOf(process.env.NEXT_PUBLIC_SUPABASE_URL || '');
+const apiOrigin = originOf(process.env.NEXT_PUBLIC_API_URL || '');
+// Production: only our own services. Without configured origins fall back to https/wss (never localhost).
+const connectSrc = isProd
+  ? (supabaseOrigin || apiOrigin
+      ? ["'self'", supabaseOrigin, supabaseOrigin.replace('https://', 'wss://'), apiOrigin].filter(Boolean).join(' ')
+      : "'self' https: wss:")
+  : "'self' http://localhost:8000 http://127.0.0.1:8000 ws://localhost:8000 ws://127.0.0.1:8000 https: wss:";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -17,7 +28,7 @@ const nextConfig = {
         },
         {
           key: 'Content-Security-Policy',
-          value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 http://localhost:3000 http://127.0.0.1:7759 ws://localhost:8000 ws://127.0.0.1:8000 https: wss:; frame-ancestors 'none';",
+          value: "default-src 'self'; script-src 'self' " + (process.env.NODE_ENV === 'production' ? '' : "'unsafe-eval' ") + "'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src " + connectSrc + "; frame-ancestors 'none';",
         },
       ],
     },

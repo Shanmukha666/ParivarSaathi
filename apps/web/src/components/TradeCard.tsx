@@ -27,7 +27,7 @@ export default function TradeCard({ trade, onClick }: { trade: Trade, onClick: (
           metric: 'Expected Salary',
           value: trade.salary || 'See details',
           trade: trade.name,
-          source: 'NCVT / MSDE Vocational Outcomes Survey',
+          source: 'Evaluation dataset (dummy)',
           isVerified: true,
           notes: 'Tap the trade card for full verified details.',
         }} />

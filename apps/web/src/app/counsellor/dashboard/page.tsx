@@ -175,13 +175,13 @@ export default function CounsellorDashboard() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-100 overflow-hidden">
+    <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-slate-100 md:overflow-hidden">
       {/* Sidebar: Escalation Queue */}
-      <aside className="w-80 md:w-96 bg-white border-r border-slate-200 flex flex-col h-full">
+      <aside className="w-full md:w-96 bg-white md:border-r border-slate-200 flex flex-col md:h-full max-h-[60vh] md:max-h-none overflow-y-auto">
         <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
           <div>
             <h1 className="font-bold text-lg">Counsellor Console</h1>
-            <p className="text-xs text-slate-400">Escalated Families Queue</p>
+            <p className="text-xs text-slate-500">Escalated Families Queue</p>
           </div>
           <span className="bg-orange-500 text-white font-bold text-xs px-2.5 py-1 rounded-full">
             {queue.filter((q) => q.status !== 'resolved').length} Active
@@ -216,7 +216,7 @@ export default function CounsellorDashboard() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 line-clamp-2 mt-1">{ticket.reason}</p>
-                <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-400">
+                <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-500">
                   <span className="flex items-center gap-1">
                     <User size={12} /> {ticket.family_profile?.trade_name || 'Trade'}
                   </span>
@@ -283,7 +283,7 @@ export default function CounsellorDashboard() {
               {/* Left Column: AI Case Summary & Profile */}
               <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 overflow-y-auto space-y-6">
                 <div>
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                     AI Auto-Summary & Trigger Context
                   </h3>
                   <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm text-slate-800 whitespace-pre-line leading-relaxed">
@@ -292,7 +292,7 @@ export default function CounsellorDashboard() {
                 </div>
 
                 <div>
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                     Recommended Counsellor Action
                   </h3>
                   <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-xs text-amber-900 space-y-1.5">
@@ -304,7 +304,7 @@ export default function CounsellorDashboard() {
               </div>
 
               {/* Right Column: Live Chat Interface */}
-              <div className="w-[420px] bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+              <div className="w-full md:w-[420px] bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                 <div className="p-3.5 bg-slate-900 text-white flex justify-between items-center text-sm font-bold">
                   <span>Live Family Chat</span>
                   <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-normal">
@@ -321,7 +321,7 @@ export default function CounsellorDashboard() {
                         msg.speaker === 'counsellor' ? 'items-end' : 'items-start'
                       }`}
                     >
-                      <span className="text-[10px] text-slate-400 font-semibold mb-0.5 capitalize">
+                      <span className="text-[10px] text-slate-500 font-semibold mb-0.5 capitalize">
                         {msg.speaker}
                       </span>
                       <div
@@ -360,7 +360,7 @@ export default function CounsellorDashboard() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+          <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
             Select a ticket from the queue to view details.
           </div>
         )}

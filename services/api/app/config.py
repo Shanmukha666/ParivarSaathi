@@ -9,7 +9,7 @@ class Settings:
     DATABASE_URL_SYNC: str = os.getenv("DATABASE_URL_SYNC", "")
     REDIS_URL: str = os.getenv("REDIS_URL", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     AUTH_PROVIDER: str = os.getenv("AUTH_PROVIDER", "legacy")
     JWT_SECRET: str = os.getenv("JWT_SECRET", "")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")

@@ -1,6 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr';
 import type { Session } from '@supabase/supabase-js';
-import { hasSupabaseConfig } from './demo-mode';
+import { hasSupabaseConfig, isDemoMode } from './demo-mode';
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -11,7 +11,8 @@ export const supabase = hasSupabaseConfig() && url && key
 
 export async function ensureFamilySession(): Promise<Session> {
   if (!supabase) {
-    // Graceful offline/demo fallback when Supabase keys are not provided
+    if (!isDemoMode()) throw new Error('Supabase is not configured');
+    // Explicit local/demo fallback when Supabase keys are not provided
     return {
       access_token: 'local-demo-token',
       token_type: 'bearer',
