@@ -99,10 +99,10 @@ async def seed_demo_fixtures(db: AsyncSession):
     # 1. Verified Data Source
     source = DataSource(
         id=1,
-        publisher="NCVT Tracer Study / MSDE",
+        publisher="Example Source (demo fixture)",
         title="Vocational Outcomes Survey 2024",
         source_url="https://ncvt.gov.in/reports/2024",
-        document_reference="Table 4.1",
+        document_reference="Demo Table A",
         retrieved_on=datetime(2024, 6, 1).date()
     )
     db.add(source)
@@ -308,7 +308,7 @@ async def run_demonstration(delay: float = 0.0):
         if delay: time.sleep(delay)
 
         # ── Step 8: System retrieves verified data ────────────────────────────
-        print_step(8, "System retrieves verified data", "Engine queries authoritative NCVT records, filtering out synthetic data.")
+        print_step(8, "System retrieves verified data", "Engine queries labelled demo-fixture records, filtering out synthetic data.")
         stmt = (
             select(OutcomeMetric, DataSource)
             .join(DataSource, OutcomeMetric.source_id == DataSource.id)
@@ -350,21 +350,21 @@ async def run_demonstration(delay: float = 0.0):
         print(f"  * Filter check: 0 synthetic records included")
         evidence = assess_evidence(tool_results)
         print(f"  * Evidence Assessment: usable={evidence.usable}, reason={evidence.reason}")
-        print_badge("Authoritative NCVT Tracer Study records loaded successfully")
+        print_badge("Authoritative Example Source (demo fixture) records loaded successfully")
         if delay: time.sleep(delay)
 
         # ── Step 9: System displays evidence ──────────────────────────────────
         print_step(9, "System displays evidence", "AI crafts empathetic, strictly grounded Telugu response with citation.")
         citations = source_citations(tool_results)
         ai_reply_1 = (
-            "వరంగల్ జిల్లాలో NCVT అధికారిక సర్వే (Table 4.1) ప్రకారం "
+            "వరంగల్ జిల్లాలో డెమో నమూనా డేటా (Demo Table A) ప్రకారం "
             "ఎలక్ట్రీషియన్ పూర్తి చేసిన వారిలో 78% మందికి ఉపాధి లభించింది."
         )
         is_valid_1, unmatched_1 = validate_reply(ai_reply_1, tool_results)
         print(f"  * AI Response (te): \"{ai_reply_1}\"")
         print(f"  * Number Grounding: valid={is_valid_1}, unmatched={unmatched_1}")
         print(f"  * Citations: {citations[0]['publisher']} — {citations[0]['document_reference']}")
-        print_badge("Evidence displayed with verifiable NCVT data reference")
+        print_badge("Evidence displayed with labelled demo-data reference")
         if delay: time.sleep(delay)
 
         # ── Step 10: Parent asks about earnings ───────────────────────────────
@@ -382,7 +382,7 @@ async def run_demonstration(delay: float = 0.0):
         print_step(11, "System returns only grounded data", "System looks up starting earnings metric and enforces strict number grounding.")
         earnings_d = next((m for m in tool_results["outcomes"]["metrics"] if m["metric_key"] == "starting_earnings"), None)
         ai_reply_2 = (
-            "ధృవీకరించబడిన డేటా (Table 4.2) ప్రకారం మొదటి నెల సగటు వేతనం ₹16,500. "
+            "ధృవీకరించబడిన డేటా (Demo Table B) ప్రకారం మొదటి నెల సగటు వేతనం ₹16,500. "
             "మూడు సంవత్సరాల అనుభవంతో ₹26,000 వరకు సంపాదించవచ్చు."
         )
         is_valid_2, unmatched_2 = validate_reply(ai_reply_2, tool_results)

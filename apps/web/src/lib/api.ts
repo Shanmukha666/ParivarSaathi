@@ -569,6 +569,13 @@ export async function fetchAdminInsights(
   return res.json();
 }
 
+/** The family's callback number, revealed by the database only to the counsellor who accepted the ticket. */
+export async function fetchTicketContact(ticketId: number | string): Promise<{ callback_phone: string | null; callback_slot: string | null }> {
+  const res = await fetch(`/api/counsellor/${ticketId}/contact`, { headers: await getSupabaseAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch callback details');
+  return res.json();
+}
+
 export async function fetchCounsellorQueue() {
   const res = await fetch('/api/counsellor/queue', {
     headers: await getSupabaseAuthHeaders(),
@@ -581,7 +588,7 @@ export async function fetchCounsellorQueue() {
   return res.json();
 }
 
-export async function acceptTicket(ticketId: number) {
+export async function acceptTicket(ticketId: number | string) {
   const res = await fetch(
     `/api/counsellor/${ticketId}/accept`,
     {
@@ -598,7 +605,7 @@ export async function acceptTicket(ticketId: number) {
 }
 
 export async function resolveTicket(
-  ticketId: number,
+  ticketId: number | string,
   resolutionNote: string
 ) {
   const res = await fetch(

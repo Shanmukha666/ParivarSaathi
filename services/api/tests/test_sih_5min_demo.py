@@ -45,10 +45,10 @@ async def demo_db():
         # Verified Source
         ds_verified = DataSource(
             id=1,
-            publisher="NCVT Tracer Study / MSDE",
+            publisher="Example Source (demo fixture)",
             title="National Vocational Tracer & Placement Study - Telangana Cohort",
             source_url="https://ncvt.gov.in/reports/2024/telangana-tracer.pdf",
-            document_reference="Table 4.1 & 4.2",
+            document_reference="Demo Table A & B",
             retrieved_on=date(2024, 6, 1)
         )
         # Synthetic Source (Explicitly Tagged)
@@ -310,7 +310,7 @@ async def test_sih_5min_judging_demonstration_scenes(demo_db):
     assert evidence.usable is True
     assert evidence.reason == "verified"
 
-    ai_reply_grounded = "వరంగల్ జిల్లాలో NCVT అధికారిక సర్వే (Table 4.1) ప్రకారం ఎలక్ట్రీషియన్ పూర్తి చేసిన వారిలో 78% మందికి ఉపాధి లభించింది."
+    ai_reply_grounded = "వరంగల్ జిల్లాలో డెమో నమూనా డేటా (Demo Table A) ప్రకారం ఎలక్ట్రీషియన్ పూర్తి చేసిన వారిలో 78% మందికి ఉపాధి లభించింది."
     is_valid, unmatched = validate_reply(ai_reply_grounded, tool_results)
     assert is_valid is True
     assert len(unmatched) == 0
@@ -318,7 +318,7 @@ async def test_sih_5min_judging_demonstration_scenes(demo_db):
     # ── SCENE 6 — Trust ───────────────────────────────────────────────────────
     citations = source_citations(tool_results)
     assert len(citations) >= 1
-    assert citations[0]["publisher"] == "NCVT Tracer Study / MSDE"
+    assert citations[0]["publisher"] == "Example Source (demo fixture)"
 
     provenance_card = {
         "label": "Why this number?",

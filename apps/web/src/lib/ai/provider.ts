@@ -1,3 +1,5 @@
+import { GeminiHttpError, modelChain, thinkingConfig, withModelFallback } from './gemini-chain';
+
 export interface VerifiedOutcome {
   district: string;
   state: string;
@@ -69,22 +71,6 @@ function languageInstruction(language: GenerateRequest['language']) {
 
 export class GeminiProvider implements AiProvider {
   private readonly apiKey = process.env.GEMINI_API_KEY;
-  private readonly primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-  private readonly fallbackModel = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash';
-
-  private async fetchWithFallback(urlPrimary: string, urlFallback: string, options: RequestInit): Promise<Response> {
-    try {
-      const res = await fetch(urlPrimary, { ...options, signal: AbortSignal.timeout(10000) });
-      if (res.status === 404 || res.status === 400) {
-        console.warn(`[GeminiProvider] Primary model returned ${res.status}. Falling back to ${this.fallbackModel}...`);
-        return await fetch(urlFallback, { ...options, signal: AbortSignal.timeout(10000) });
-      }
-      return res;
-    } catch (err: any) {
-      console.warn(`[GeminiProvider] Primary model call failed (${err?.message}). Retrying with fallback ${this.fallbackModel}...`);
-      return await fetch(urlFallback, { ...options, signal: AbortSignal.timeout(10000) });
-    }
-  }
 
   async generate(request: GenerateRequest): Promise<GenerateResponse> {
     if (!this.apiKey) throw new Error('GEMINI_API_KEY is not configured');
@@ -100,52 +86,54 @@ export class GeminiProvider implements AiProvider {
       request.verifiedEvidence ? `VERIFIED_DATA=${JSON.stringify(request.verifiedEvidence)}` : 'VERIFIED_DATA unavailable',
     ].join('\n');
 
+    // The whole exchange (first call plus any tool follow-up) runs on ONE model, because Gemini 3
+    // thought signatures are only valid for the model that produced them. If that model fails,
+    // the next model in the chain restarts the exchange from scratch.
+    return withModelFallback(modelChain(), (model) => this.exchange(model, system, request));
+  }
+
+  private async post(model: string, body: unknown) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey as string },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(12000),
+    });
+    if (response.status === 429) throw new GeminiHttpError(429, 'AI_RATE_LIMITED');
+    if (!response.ok) throw new GeminiHttpError(response.status);
+    return response.json();
+  }
+
+  private async exchange(model: string, system: string, request: GenerateRequest): Promise<GenerateResponse> {
     const body = {
       system_instruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: `<user_message>${request.userMessage}</user_message>` }] }],
       tools: [{ function_declarations: [outcomeTool] }],
-      generation_config: { temperature: 0.2, max_output_tokens: 1024, thinking_config: { thinking_level: 'low' } },
+      generation_config: { temperature: 0.2, max_output_tokens: 1024, thinking_config: thinkingConfig(model) },
     };
+    const unavailable = 'Verified data is unavailable right now. Please try again or request a counsellor callback.';
 
-    const endpointPrimary = `https://generativelanguage.googleapis.com/v1beta/models/${this.primaryModel}:generateContent`;
-    const endpointFallback = `https://generativelanguage.googleapis.com/v1beta/models/${this.fallbackModel}:generateContent`;
-
-    const response = await this.fetchWithFallback(endpointPrimary, endpointFallback, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
-      body: JSON.stringify(body),
-    });
-
-    if (response.status === 429) throw new Error('AI_RATE_LIMITED');
-    if (!response.ok) throw new Error(`Gemini request failed: ${response.status}`);
-
-    const payload = await response.json();
+    const payload = await this.post(model, body);
     const parts = payload.candidates?.[0]?.content?.parts || [];
     // Keep the ORIGINAL part: Gemini 3 returns a thought signature next to functionCall and
     // rejects the follow-up with HTTP 400 if it is not echoed back unchanged.
     const functionCallPart = parts.find((part: { functionCall?: unknown }) => part.functionCall);
-    const functionCall = parts.find((part: { functionCall?: { name: string; args: Record<string, string> } }) => part.functionCall)?.functionCall;
+    const functionCall = functionCallPart?.functionCall as { name: string; args: Record<string, string> } | undefined;
     const text = parts.find((part: { text?: string }) => part.text)?.text;
 
     if (functionCall) {
-      const followUpBody = {
+      const followUp = await this.post(model, {
         ...body,
         contents: [
           ...body.contents,
           { role: 'model', parts: [functionCallPart] },
           { role: 'user', parts: [{ functionResponse: { name: functionCall.name, response: { data: request.verifiedEvidence || null } } }] },
         ],
-      };
-      const followUp = await this.fetchWithFallback(endpointPrimary, endpointFallback, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
-        body: JSON.stringify(followUpBody),
       });
-      if (!followUp.ok) throw new Error(`Gemini follow-up failed: ${followUp.status}`);
-      const followUpPayload = await followUp.json();
-      const followUpText = followUpPayload.candidates?.[0]?.content?.parts?.find((part: { text?: string }) => part.text)?.text;
-      return { text: followUpText || 'Verified data is unavailable right now. Please try again or request a counsellor callback.' };
+      const followUpText = followUp.candidates?.[0]?.content?.parts?.find((part: { text?: string }) => part.text)?.text;
+      return { text: followUpText || unavailable };
     }
-    return { text: text || 'Verified data is unavailable right now. Please try again or request a counsellor callback.' };
+    return { text: text || unavailable };
   }
 }

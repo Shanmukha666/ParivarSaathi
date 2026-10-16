@@ -5,8 +5,9 @@ Usage:
   python tools/import_dataset.py data.csv --out import.sql [--replace-previous] [--create-missing-trades]
 
 Then paste import.sql into Supabase -> SQL Editor and run it (it is one transaction and safe to re-run).
-Every row is flagged is_synthetic = true, verification_status = 'pending'. The app shows such rows only in
-explicit demo mode, with a "DEMO / SYNTHETIC DATA" badge. Nothing is ever marked verified by this tool.
+Every row is flagged is_synthetic = true, verification_status = 'pending'. NOTE: the live app reads only verified, non-synthetic rows, so imported rows are
+stored but NOT displayed until you decide how to surface labelled sample data (see docs/OPEN_DECISIONS.md).
+Nothing is ever marked verified by this tool.
 
 Accepted columns (names are matched loosely, e.g. "Placement (%)", "Avg Starting Salary (INR/month)"):
   trade, state, district, provider, year/batch, sample_size,

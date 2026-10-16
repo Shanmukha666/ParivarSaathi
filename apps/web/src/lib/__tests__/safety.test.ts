@@ -63,3 +63,20 @@ describe('engagement funnel fixture', () => {
     expect(m.engagement_funnel.map((s) => s.stage).sort()).toEqual(['escalated', 'sessions', 'summary_shared', 'trades_viewed']);
   });
 });
+
+describe('crisisReply when the counsellor ticket could not be created', () => {
+  const NOTIFIED_MARKERS: Record<'en' | 'te' | 'hi' | 'ta', string> = {
+    en: 'counsellor', te: 'కౌన్సెలర్', hi: 'काउंसलर', ta: 'ஆலோசகருக்கு',
+  };
+  for (const lang of ['en', 'te', 'hi', 'ta'] as const) {
+    it(`${lang}: keeps the helpline and drops the false promise`, () => {
+      const honest = crisisReply(lang, false);
+      expect(honest).toContain('14416');
+      expect(honest).toContain('1800-891-4416');
+      expect(honest).not.toContain(NOTIFIED_MARKERS[lang]);
+      expect(honest.length).toBeGreaterThan(40);
+      // the normal reply still makes the promise
+      expect(crisisReply(lang)).toContain(NOTIFIED_MARKERS[lang]);
+    });
+  }
+});

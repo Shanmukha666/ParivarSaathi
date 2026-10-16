@@ -1,9 +1,15 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { fetchCounsellorQueue, acceptTicket, resolveTicket, fetchSessionMessages, sendCounsellorMessage } from '../../../lib/api';
+import { fetchCounsellorQueue, acceptTicket, resolveTicket, fetchSessionMessages, sendCounsellorMessage, fetchTicketContact } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
 import { CheckCircle2, Phone, AlertCircle, Clock, Send, User, MapPin } from 'lucide-react';
+
+// The database uses new/assigned/contacted/resolved/closed_no_response; the demo queue uses pending/accepted.
+// The page used to test for 'queued', which matched neither, so the Accept button never appeared.
+const AWAITING = ['new', 'queued', 'pending'];
+const FINISHED = ['resolved', 'closed_no_response'];
+const QUEUE_ERROR = 'Could not refresh the queue. Showing the last known list and retrying automatically.';
 
 interface QueueItem {
   id: number;
@@ -12,7 +18,9 @@ interface QueueItem {
   summary: string;
   status: string;
   created_at: string;
-  callback_phone?: string;
+  callback_phone?: string | null;
+  callback_slot?: string | null;
+  priority?: string;
   family_profile?: {
     district?: string;
     state?: string;
@@ -37,6 +45,8 @@ export default function CounsellorDashboard() {
   const [chatInput, setChatInput] = useState('');
   const [resolveNote, setResolveNote] = useState('');
   const [showResolveModal, setShowResolveModal] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   // Load live queue
@@ -44,16 +54,34 @@ export default function CounsellorDashboard() {
     try {
       const data = await fetchCounsellorQueue();
       setQueue(data);
-      if (!selectedTicket && data.length > 0) {
-        setSelectedTicket(data[0]);
-      }
+      setNotice((prev) => (prev === QUEUE_ERROR ? null : prev));
+      setSelectedTicket((prev) => prev ?? data[0] ?? null);
     } catch (e) {
-      setQueue([]);
-      setSelectedTicket(null);
+      // A failed refresh must NEVER blank the queue: an empty list reads as "no families are waiting".
+      setNotice(QUEUE_ERROR);
     } finally {
       setLoading(false);
     }
   };
+
+  // The callback number is only revealed by the database once this counsellor has accepted the ticket.
+  const loadContact = async (id: number) => {
+    try {
+      const contact = await fetchTicketContact(id);
+      setSelectedTicket((prev) => prev && prev.id === id
+        ? { ...prev, callback_phone: contact.callback_phone ?? prev.callback_phone, callback_slot: contact.callback_slot ?? prev.callback_slot }
+        : prev);
+    } catch {
+      /* the number is optional; the Call button simply stays hidden */
+    }
+  };
+
+  useEffect(() => {
+    if (selectedTicket && !selectedTicket.callback_phone && !AWAITING.includes(selectedTicket.status) && !FINISHED.includes(selectedTicket.status)) {
+      loadContact(selectedTicket.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTicket?.id, selectedTicket?.status]);
 
   useEffect(() => {
     loadQueue();
@@ -132,26 +160,32 @@ export default function CounsellorDashboard() {
   }, [selectedTicket?.session_id]);
 
   const handleAccept = async (id: number) => {
+    setNotice(null);
     try {
       await acceptTicket(id);
+      setSelectedTicket((prev) => (prev && prev.id === id ? { ...prev, status: 'assigned' } : prev));
       loadQueue();
-      if (selectedTicket) {
-        setSelectedTicket({ ...selectedTicket, status: 'assigned' });
-      }
     } catch (e) {
-      if (selectedTicket) setSelectedTicket({ ...selectedTicket, status: 'assigned' });
+      // Do NOT pretend the ticket is ours: another counsellor may have taken it, and nobody should
+      // believe they own a distress case they do not.
+      setNotice('Could not accept this ticket. It may already have been taken by another counsellor. The queue has been refreshed.');
+      loadQueue();
     }
   };
 
   const handleResolve = async () => {
     if (!selectedTicket) return;
+    setResolveError(null);
     try {
-      await resolveTicket(selectedTicket.id, resolveNote || 'Resolved via phone counseling');
+      await resolveTicket(selectedTicket.id, resolveNote || 'Resolved via phone counselling');
       setShowResolveModal(false);
       setResolveNote('');
-      loadQueue();
+      setSelectedTicket(null);
+      setChatMessages([]);
+      await loadQueue();
     } catch (e) {
-      setShowResolveModal(false);
+      // Keep the dialog open: closing it silently made a failed resolve look like a success.
+      setResolveError('Could not mark this ticket as resolved. Please try again.');
     }
   };
 
@@ -171,11 +205,21 @@ export default function CounsellorDashboard() {
       await sendCounsellorMessage(selectedTicket.session_id, textToSend);
     } catch (e) {
       console.error('Failed to send counsellor message', e);
+      setChatMessages((prev) => prev.filter((m) => m !== optimisticMsg));
+      setChatInput(textToSend);
+      setNotice('Message not sent. The family has not received it. Please try again.');
     }
   };
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen md:h-screen bg-slate-100 md:overflow-hidden">
+      {notice && (
+        <div role="alert" className="fixed top-3 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] bg-rose-700 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-3">
+          <AlertCircle size={16} className="shrink-0" />
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} aria-label="Dismiss" className="underline shrink-0">Dismiss</button>
+        </div>
+      )}
       {/* Sidebar: Escalation Queue */}
       <aside className="w-full md:w-96 bg-white md:border-r border-slate-200 flex flex-col md:h-full max-h-[60vh] md:max-h-none overflow-y-auto">
         <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
@@ -184,7 +228,7 @@ export default function CounsellorDashboard() {
             <p className="text-xs text-slate-500">Escalated Families Queue</p>
           </div>
           <span className="bg-orange-500 text-white font-bold text-xs px-2.5 py-1 rounded-full">
-            {queue.filter((q) => q.status !== 'resolved').length} Active
+            {queue.filter((q) => !FINISHED.includes(q.status)).length} Active
           </span>
         </div>
 
@@ -205,14 +249,14 @@ export default function CounsellorDashboard() {
                   </span>
                   <span
                     className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                      ticket.status === 'active'
-                        ? 'bg-amber-100 text-amber-800'
-                        : ticket.status === 'resolved'
+                      FINISHED.includes(ticket.status)
                         ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-rose-100 text-rose-800'
+                        : AWAITING.includes(ticket.status)
+                        ? 'bg-rose-100 text-rose-800'
+                        : 'bg-amber-100 text-amber-800'
                     }`}
                   >
-                    {ticket.status.toUpperCase()}
+                    {ticket.status.replace(/_/g, ' ').toUpperCase()}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 line-clamp-2 mt-1">{ticket.reason}</p>
@@ -259,7 +303,7 @@ export default function CounsellorDashboard() {
                     <Phone size={16} /> Call Parent
                   </a>
                 )}
-                {selectedTicket.status === 'queued' && (
+                {AWAITING.includes(selectedTicket.status) && (
                   <button
                     onClick={() => handleAccept(selectedTicket.id)}
                     className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-sm font-bold shadow-sm"
@@ -267,7 +311,7 @@ export default function CounsellorDashboard() {
                     Accept Ticket
                   </button>
                 )}
-                {selectedTicket.status !== 'resolved' && (
+                {!AWAITING.includes(selectedTicket.status) && !FINISHED.includes(selectedTicket.status) && (
                   <button
                     onClick={() => setShowResolveModal(true)}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold flex items-center gap-1.5 shadow-sm"
@@ -372,7 +416,7 @@ export default function CounsellorDashboard() {
           <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <h3 className="text-lg font-bold text-slate-900">Resolve Case #{selectedTicket?.id}</h3>
             <p className="text-xs text-slate-600">
-              Summarize how the family's hesitation was addressed for administrative analytics.
+              Summarize how the family&apos;s hesitation was addressed for administrative analytics.
             </p>
             <textarea
               rows={3}
@@ -381,6 +425,7 @@ export default function CounsellorDashboard() {
               placeholder="e.g. Addressed status concerns, shared lateral entry pathways, family agreed to visit district ITI next Monday."
               className="w-full p-3 border border-slate-300 rounded-xl text-sm"
             />
+            {resolveError && <p role="alert" className="text-sm font-semibold text-rose-700">{resolveError}</p>}
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setShowResolveModal(false)}

@@ -80,3 +80,17 @@ In all tiers, crisis and self-harm keywords trigger immediate interception:
 1. Crisis check occurs **prior** to any LLM query or demo branch.
 2. Returns regional Tele-MANAS helpline numbers (`14416` and `1800-891-4416`).
 3. Escalation ticket marked `urgent` with 1-hour SLA.
+
+
+## Which code path is authoritative (read this before changing chat)
+
+There are two chat implementations. They are intentionally not merged yet:
+
+| Path | Used when | Files |
+|---|---|---|
+| **Next.js + Supabase** (primary, what Vercel deploys) | `NEXT_PUBLIC_API_URL` is empty | `apps/web/src/app/api/*`, `lib/ai/provider.ts`, `lib/safety.ts` |
+| **FastAPI** (optional service; also home of the 60-conversation evaluation and demo scripts) | `NEXT_PUBLIC_API_URL` is set | `services/api/app/*` |
+
+Rules that keep them from drifting: the crisis phrases and reply live in `safety.ts` (the review sheet is generated from it); both Gemini clients use the same model chain (`GEMINI_MODEL`, then `GEMINI_FALLBACK_MODELS`) and the same thinking-config rule; outcome numbers always come from the database, never from the model. A change to either implementation must be mirrored and tested in the other until one is retired.
+
+Data layers: Supabase Postgres (production), SQLAlchemy (FastAPI service), and in-browser demo data (`lib/demo-*.ts`, only when demo mode is on). `apps/web/src/lib/api.ts` is the browser-side client that chooses between them.

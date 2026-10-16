@@ -5,7 +5,7 @@ Initializes an isolated SQLite or PostgreSQL database with deterministically
 verified and explicitly labelled DEMO/SYNTHETIC fixtures for the 5-minute judging flow.
 
 Truthfulness Rules:
-1. Official statistics are strictly sourced from NCVT Tracer Study 2024 / MSDE.
+1. Nothing here is an official statistic. Every outcome value is a labelled demo fixture until the organisers' dataset is imported (tools/import_dataset.py).
 2. Where official data is unavailable, data is explicitly tagged:
    is_synthetic=True, verification_status="DEMO / SYNTHETIC".
 3. No fake government claims are manufactured.
@@ -61,10 +61,10 @@ def seed_database(db_url: str = "sqlite:///./parivar_demo.db"):
         # Official Verified Source
         ds_verified = DataSource(
             id=1,
-            publisher="NCVT Tracer Study / MSDE",
+            publisher="Example Source (demo fixture)",
             title="National Vocational Tracer & Placement Study - Telangana Cohort",
             source_url="https://ncvt.gov.in/reports/2024/telangana-tracer.pdf",
-            document_reference="Table 4.1 & 4.2",
+            document_reference="Demo Table A & B",
             retrieved_on=date(2024, 6, 1)
         )
 
@@ -144,7 +144,7 @@ def seed_database(db_url: str = "sqlite:///./parivar_demo.db"):
         print("[+] Seeded Providers (1 Verified Government ITI, 1 Labelled Demo Centre).")
 
         # ── 4. Outcome Metrics (Verified & Labelled Synthetic) ───────────────
-        # Verified NCVT Warangal Metrics
+        # Warangal demo-fixture metrics
         m_placement = OutcomeMetric(
             id=1,
             trade_id=1,
@@ -220,7 +220,7 @@ def seed_database(db_url: str = "sqlite:///./parivar_demo.db"):
 
         db.add_all([m_placement, m_earnings_start, m_earnings_3yr, m_synth_adilabad])
         db.commit()
-        print("[+] Seeded Outcome Metrics (Verified Warangal NCVT records + Labelled Demo record).")
+        print("[+] Seeded Outcome Metrics (Warangal demo-fixture records + Labelled Demo record).")
 
         # ── 5. NSQF Career Pathways (Scene 7 Progression Ladder) ─────────────
         # Step 1: Entry Level Role

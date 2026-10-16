@@ -1,62 +1,43 @@
-# Efficiency & Cost Metrics
+# Efficiency and cost
 
-**Subject**: Latency, Token Economics, Bundle Sizing, and Infrastructure Overhead  
-**System**: Parivar Path v17
+Every figure here is either **measured** (with the command that produced it) or **read from the code**.
+Anything that needs your API key or a live deployment is listed under "Not yet measured" instead of
+being estimated. An earlier version of this file contained latency, Core Web Vitals and price figures
+that had never been measured; they were removed.
 
----
+## Measured
 
-## 1. Bundle Size & Assets
-
-The web application is built on Next.js 14 App Router with standalone output capability.
-
-| Chunk / Resource | Typical Compressed Size | Notes |
+| What | Result | How to reproduce |
 |---|---|---|
-| First Load JS (Shared) | ~84 KB | React 18, Zustand, Lucide icons (tree-shaken) |
-| Route: `/` (Language Gate) | ~4 KB | Minimal landing selector |
-| Route: `/profile` | ~6 KB | Dynamic form with regional i18n string maps |
-| Route: `/trades` | ~8 KB | Filterable pathway listing |
-| Route: `/chat` | ~14 KB | Streaming UI, speech synthesizer wrapper, chips |
-| Route: `/admin` | ~28 KB | Recharts visual components & tabular breakdowns |
-| Total Initial Client Payload | **< 110 KB** | Ultra-lean for 3G/4G connectivity in rural areas |
+| Shared JS for every page | 87.3 kB | `cd apps/web && npm run build` |
+| First Load JS per page | 89.5 kB (`/research`) to 186 kB (`/chat`) | same; full table in [PERFORMANCE.md](PERFORMANCE.md) |
+| App overhead per message (classify + number check, no LLM) | under 1 ms at p99 in en/te/hi/ta | `python tools/benchmark_pipeline.py` |
+| Production server, page response | 5-110 ms locally | `next start` / standalone `node server.js` |
+| Full backend suite | 167 tests, about 2 s | `cd services/api && pytest` |
+| Frontend suite | 108 tests, about 2 s | `cd apps/web && npx vitest run` |
+| Database migrations + 69 RLS checks | about 10 s | `bash tools/verify_rls.sh` |
 
----
+## Read from the code (not measured)
 
-## 2. Token Economics & LLM Cost Model
+- LLM output is capped at 1024 tokens per reply (`provider.ts`, `gemini.py`). Thinking is `low` on
+  Gemini 3 and off on the Gemini 2.x fallback. Thinking tokens are billed as output, so 1024 is the
+  ceiling, not the typical size.
+- One family message makes at most one Gemini exchange (two requests when the model calls the
+  outcome tool). On a 5xx or timeout there is one retry on the same model, then one attempt per fallback model, so a
+  single message can cost at most 2 attempts per model in the chain.
+- No LLM call at all for: crisis messages, refusals, missing-evidence answers, demo mode.
+- Abuse limits: 30 requests/min per user (per server instance), 30 messages per session, and
+  database-enforced 100 messages/day and 5 sessions/day per user.
+- Gemini timeout is 12 s per request.
 
-### Google Gemini Pricing Model (Tier: Gemini 3.8 / 2.5 Flash)
-- **Input Tokens**: $0.075 per 1,000,000 tokens
-- **Output Tokens**: $0.30 per 1,000,000 tokens
+## Not yet measured
 
-### Session Economics Breakdown:
-- **Typical Prompt Size**: ~650 tokens (System instructions, localized few-shot formatting, verified facts schema).
-- **Average User Message**: ~35 tokens.
-- **Average Assistant Turn**: ~120 tokens.
-- **Turns per Family Session**: ~6 turns.
+Run `python tools/live_preflight.py --json` with your keys, which records latency and token counts per
+language and for the tool-call round trip, then paste the output here.
 
-$$\text{Input Tokens per Session} \approx 6 \times (650 + 35) = 4,110 \text{ tokens}$$
-$$\text{Output Tokens per Session} \approx 6 \times 120 = 720 \text{ tokens}$$
-
-$$\text{Input Cost} = \frac{4,110}{1,000,000} \times \$0.075 = \$0.000308$$
-$$\text{Output Cost} = \frac{720}{1,000,000} \times \$0.30 = \$0.000216$$
-$$\mathbf{\text{Total Cost per Family Session}} \approx \mathbf{\$0.000524 \ (approx.\ 0.044\ \text{INR})}$$
-
-### Scale Projections:
-| Monthly Family Sessions | Monthly Cost (USD) | Monthly Cost (INR) |
-|---|---|---|
-| 1,000 sessions | $0.52 | ~₹44 |
-| 10,000 sessions | $5.24 | ~₹440 |
-| 100,000 sessions | $52.40 | ~₹4,400 |
-
-*Zero hallucination grounding prevents runaway conversation loops, keeping session length tightly bounded.*
-
----
-
-## 3. Latency & Core Web Vitals Targets
-
-- **TTFB (Time to First Byte)**: < 150 ms (Vercel Edge / Node container)
-- **FCP (First Contentful Paint)**: < 0.8 s
-- **LCP (Largest Contentful Paint)**: < 1.4 s
-- **Gemini Assistant Turn Latency**:
-  - P50: 950 ms
-  - P90: 1,600 ms
-  - Fallback Circuit Breaker: 10,000 ms timeout before smooth degradation.
+| Item | Status |
+|---|---|
+| Gemini latency (p50/p90) per language | not measured |
+| Tokens and cost per conversation | not measured; look up the current price for your model on Google's pricing page and multiply by the token counts from the preflight |
+| Core Web Vitals on a real phone | not measured |
+| Behaviour under concurrent load | no load test has been run |

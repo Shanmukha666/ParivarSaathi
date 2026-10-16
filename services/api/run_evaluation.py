@@ -66,12 +66,12 @@ def generate_markdown_report(results: dict) -> str:
     md.append("|---|---|---|---|")
 
     category_safeguards = {
-        "income": "NCVT Tracer study database lookup; salary range grounding",
+        "income": "outcome data lookup; salary range grounding",
         "job_security": "Placement rate citation; refusal to promise 100% guarantee",
         "social_status": "NSQF technical supervisor qualification positioning",
-        "safety": "NCVT workshop PPE standards; supervised industrial protocol",
+        "safety": "workshop PPE standards; supervised industrial protocol",
         "further_study": "Lateral entry mapping to Polytechnic / B.Voc degree ladders",
-        "provider_quality": "Affiliation filter (NCVT/SCVT government-accredited centres only)",
+        "provider_quality": "Affiliation filter (government-accredited centres only)",
         "unknown_question": "Domain boundary enforcement (deflects medical/weather queries politely)",
         "missing_data": "`verified_data_unavailable` contract; refuses to invent numbers",
         "conflicting_data": "Multi-source collision detector; pauses claim for counsellor review",

@@ -12,7 +12,7 @@ export type Lang = 'en' | 'te' | 'hi' | 'ta';
 // Tele-MANAS: free, 24x7 national helpline run under the Ministry of Health and Family Welfare.
 export const TELE_MANAS = { short: '14416', tollFree: '1800-891-4416', site: 'https://telemanas.mohfw.gov.in' };
 
-const PHRASES: Record<Lang | 'romanised', string[]> = {
+export const DISTRESS_PHRASES: Record<Lang | 'romanised', string[]> = {
   en: [
     'suicide', 'suicidal', 'kill myself', 'end my life', 'want to die', 'wanna die', 'better off dead',
     'self harm', 'self-harm', 'hurt myself', 'cut myself', "don't want to live", 'do not want to live',
@@ -41,7 +41,7 @@ const PHRASES: Record<Lang | 'romanised', string[]> = {
   ],
 };
 
-const ALL = Object.values(PHRASES).flat().map(p => p.normalize('NFC').toLowerCase());
+const ALL = Object.values(DISTRESS_PHRASES).flat().map(p => p.normalize('NFC').toLowerCase());
 
 function normalise(text: string) {
   return text.normalize('NFC').toLowerCase().replace(/[\u200b-\u200d\ufeff]/g, '').replace(/\s+/g, ' ');
@@ -52,7 +52,24 @@ export function hasDistressSignal(text: string): boolean {
   return ALL.some(p => t.includes(p));
 }
 
-export function crisisReply(lang: Lang): string {
+/** Remove the final sentence (used when the counsellor ticket could not be created). */
+function dropLastSentence(text: string): string {
+  const body = text.trimEnd().replace(/[.\u0964]$/, '');
+  const cut = Math.max(body.lastIndexOf('. '), body.lastIndexOf('\u0964 '));
+  return cut === -1 ? text : body.slice(0, cut + 1);
+}
+
+/**
+ * The reply ends with a sentence saying a counsellor was notified. Pass counsellorNotified=false when
+ * the urgent ticket could NOT be created, so we never promise a callback that was not queued. The
+ * helpline numbers always stay in.
+ */
+export function crisisReply(lang: Lang, counsellorNotified = true): string {
+  const full = crisisReplyFull(lang);
+  return counsellorNotified ? full : dropLastSentence(full);
+}
+
+function crisisReplyFull(lang: Lang): string {
   const { short, tollFree } = TELE_MANAS;
   if (lang === 'te') {
     return `మీరు ఇంత బాధలో ఉన్నందుకు నాకు చాలా బాధగా ఉంది. మీరు ఒంటరి కాదు. ఇప్పుడే ${short} (లేదా ${tollFree}) కి కాల్ చేయండి. ఇది ఉచితం, 24 గంటలూ పనిచేస్తుంది, తెలుగులో మాట్లాడవచ్చు. మీ దగ్గర ఉన్న నమ్మకమైన వ్యక్తిని పిలిచి మీ దగ్గరే ఉండమని చెప్పండి. మీ అభ్యర్థనను అత్యవసరంగా కౌన్సెలర్‌కు పంపాను.`;

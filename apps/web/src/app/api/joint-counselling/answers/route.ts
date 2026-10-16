@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '../../../../lib/supabase-server';
 import { enforceRateLimit } from '../../../../lib/rate-limit';
+import { fail, isUuid } from '../../../../lib/guard';
+import { readJson } from '../../../../lib/http';
+import { ensureTicket } from '../../../../lib/escalation';
+import { writeSessionState } from '../../../../lib/session-state';
 
 const QUESTIONS = ['preferred_trade', 'top_priority', 'preferred_location'] as const;
 type Participant = 'learner' | 'parent';
+const MAX_ANSWER = 100; // free-text answers are short; unbounded input was being stored as-is
 
 function compare(learner: Record<string, string>, parent: Record<string, string>) {
   const agreements = QUESTIONS.filter(question =>
@@ -27,15 +32,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': '60' } });
   }
 
-  const body = await request.json() as {
-    session_id?: string;
-    participant?: Participant;
-    answers?: Record<string, string>;
-    request_escalation?: boolean;
-  };
-  if (!body.session_id || !body.participant || !body.answers ||
-      !['learner', 'parent'].includes(body.participant) ||
-      Object.keys(body.answers).some(key => !QUESTIONS.includes(key as typeof QUESTIONS[number]))) {
+  const body = await readJson(request);
+  if (!body) return fail(400, 'invalid_json');
+  const participant: Participant | null = body.participant === 'learner' || body.participant === 'parent' ? body.participant : null;
+  const rawAnswers = body.answers !== null && typeof body.answers === 'object' && !Array.isArray(body.answers)
+    ? (body.answers as Record<string, unknown>) : null;
+  if (!isUuid(body.session_id) || !participant || !rawAnswers ||
+      Object.keys(rawAnswers).some(key => !QUESTIONS.includes(key as typeof QUESTIONS[number])) ||
+      Object.values(rawAnswers).some(value => typeof value !== 'string' || value.length > MAX_ANSWER)) {
     return NextResponse.json({ error: 'Invalid joint counselling answer' }, { status: 400 });
   }
 
@@ -49,20 +53,22 @@ export async function POST(request: Request) {
 
   const current = session.joint_counselling_state || { mode: 'joint', answers: {}, evidence_discussed: [] };
   const answers = Object.fromEntries(
-    Object.entries(body.answers).filter(([, value]) => typeof value === 'string' && value.trim()),
-  );
+    Object.entries(rawAnswers).filter(([, value]) => typeof value === 'string' && value.trim()),
+  ) as Record<string, string>;
+
+  // A failed write used to be ignored, so a family could be told their answers were saved when they were not.
+  // joint_counselling_state is not a family-writable column, so it is written server-side (see lib/session-state.ts).
+  const save = (state: unknown) => writeSessionState(session.id, user.id, { joint_counselling_state: state });
   const missing = QUESTIONS.filter(question => !answers[question]);
-  const nextAnswers = { ...(current.answers || {}), [body.participant]: { ...(current.answers?.[body.participant] || {}), ...answers } };
+  const nextAnswers = { ...(current.answers || {}), [participant]: { ...(current.answers?.[participant] || {}), ...answers } };
 
   if (missing.length) {
-    await supabase.from('sessions').update({
-      joint_counselling_state: { ...current, mode: 'joint', status: 'incomplete', answers: nextAnswers },
-    }).eq('id', session.id).eq('owner_id', user.id);
+    if (!(await save({ ...current, mode: 'joint', status: 'incomplete', answers: nextAnswers }))) return fail(500, 'answers_not_saved');
     return NextResponse.json({ status: 'incomplete', missing, revealed: false });
   }
-  if (body.participant === 'learner' || !nextAnswers.learner) {
+  if (participant === 'learner' || !nextAnswers.learner) {
     const nextState = { ...current, mode: 'joint', status: 'awaiting_parent', answers: nextAnswers };
-    await supabase.from('sessions').update({ joint_counselling_state: nextState }).eq('id', session.id).eq('owner_id', user.id);
+    if (!(await save(nextState))) return fail(500, 'answers_not_saved');
     return NextResponse.json({ status: 'awaiting_parent', missing: [], revealed: false });
   }
 
@@ -84,6 +90,8 @@ export async function POST(request: Request) {
     : { data: [] };
   const evidence = evidenceRows || [];
   const citations = evidence.map((row: any) => row.data_sources).filter(Boolean);
+  // Create the ticket first so the saved state and the response describe what really happened.
+  const escalated = body.request_escalation === true ? await ensureTicket(supabase, session.id, 'joint_counselling_requested') : false;
   const nextState = {
     ...current,
     mode: 'joint',
@@ -97,25 +105,18 @@ export async function POST(request: Request) {
       avoid_blame: true,
     },
     unresolved: true,
-    escalation_status: body.request_escalation ? 'pending' : (current.escalation_status || 'not_escalated'),
+    escalation_status: escalated ? 'pending' : (current.escalation_status || 'not_escalated'),
     evidence_discussed: citations,
   };
-  await supabase.from('sessions').update({ joint_counselling_state: nextState }).eq('id', session.id).eq('owner_id', user.id);
-  if (body.request_escalation) {
-    await supabase.from('escalations').insert({
-      session_id: session.id,
-      reason: 'joint_counselling_requested',
-      status: 'new',
-      priority: 'high',
-    });
-  }
+  if (!(await save(nextState))) return fail(500, 'answers_not_saved');
   return NextResponse.json({
     status: 'compared',
     missing: [],
     revealed: true,
     comparison,
     counselling_plan: nextState.counselling_plan,
-    escalate: Boolean(body.request_escalation),
+    escalate: escalated,
+    escalation_failed: body.request_escalation === true && !escalated,
     evidence,
     citations,
   });

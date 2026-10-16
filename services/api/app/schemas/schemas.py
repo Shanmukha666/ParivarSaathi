@@ -38,7 +38,8 @@ class SessionResponse(BaseModel):
 class ChatRequest(BaseModel):
     session_id: UUID4
     speaker: Literal["learner", "parent"]
-    text: str = Field(..., min_length=1, max_length=1000)
+    # 5000 here, 1000 enforced in the router AFTER the crisis check, so a long distress message is not a 422.
+    text: str = Field(..., min_length=1, max_length=5000)
     lang: Literal["en", "hi", "te", "ta"]
 
 class ChatResponse(BaseModel):

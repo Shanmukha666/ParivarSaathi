@@ -13,6 +13,13 @@ const connectSrc = isProd
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Self-contained server bundle for the Docker image (node server.js, no node_modules copy).
+  // outputFileTracingRoot pins the layout so the bundle is the same whether or not a parent lockfile exists.
+  output: 'standalone',
+  experimental: { outputFileTracingRoot: __dirname },
+  // The app never uses next/image. Turning the optimizer off removes the image-cache endpoint that
+  // the open next@14 advisory (GHSA-3x4c-7xq6-9pq8, unbounded image disk cache) relies on.
+  images: { unoptimized: true },
   headers: async () => [
     {
       source: '/:path*',
@@ -28,7 +35,7 @@ const nextConfig = {
         },
         {
           key: 'Content-Security-Policy',
-          value: "default-src 'self'; script-src 'self' " + (process.env.NODE_ENV === 'production' ? '' : "'unsafe-eval' ") + "'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src " + connectSrc + "; frame-ancestors 'none';",
+          value: "default-src 'self'; script-src 'self' " + (process.env.NODE_ENV === 'production' ? '' : "'unsafe-eval' ") + "'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src " + connectSrc + "; frame-ancestors 'none';",
         },
       ],
     },

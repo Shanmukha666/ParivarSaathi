@@ -85,7 +85,7 @@ def validate_reply(reply: str, tool_results: dict[str, Any]) -> tuple[bool, list
                 allowed.add(float(record.get("sample_size")))
             except (ValueError, TypeError):
                 pass
-        # Also include numbers from source title or doc_ref (like Table 4.1 or MP-Solar-2024)
+        # Also include numbers from source title or doc_ref (like Demo Table A or MP-Solar-2024)
         source = record.get("source") or {}
         for s_field in (source.get("title", ""), source.get("document_reference", "")):
             if s_field:

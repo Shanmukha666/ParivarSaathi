@@ -1,13 +1,15 @@
 import type { Metadata } from 'next';
-import { Bricolage_Grotesque, Inter, Noto_Sans_Devanagari, Noto_Sans_Telugu, Noto_Sans_Tamil } from 'next/font/google';
+// Fonts are self-hosted (no build-time or runtime call to Google): the production build works
+// offline, no visitor IP goes to a third party, and the CSP needs no font origins. Variable fonts
+// carry unicode-range subsets, so a Telugu visitor only downloads the Telugu file.
+import '@fontsource-variable/inter';
+import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/noto-sans-devanagari';
+import '@fontsource-variable/noto-sans-telugu';
+import '@fontsource-variable/noto-sans-tamil';
 import './globals.css';
 import ClientLayoutWrapper from '../components/ClientLayoutWrapper';
 
-const display = Bricolage_Grotesque({ subsets: ['latin'], variable: '--font-display' });
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
-const notohindi = Noto_Sans_Devanagari({ subsets: ['devanagari'], variable: '--font-noto-hindi' });
-const nototelugu = Noto_Sans_Telugu({ subsets: ['telugu'], variable: '--font-noto-telugu' });
-const nototamil = Noto_Sans_Tamil({ subsets: ['tamil'], variable: '--font-noto-tamil' });
 
 export const metadata: Metadata = {
   title: 'Parivar Path',
@@ -22,7 +24,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${display.variable} ${inter.variable} ${notohindi.variable} ${nototelugu.variable} ${nototamil.variable} font-sans bg-background text-textDark min-h-screen`}>
+      <body className="font-sans bg-background text-textDark min-h-screen">
         <ClientLayoutWrapper>
           {children}
         </ClientLayoutWrapper>

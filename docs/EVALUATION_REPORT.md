@@ -1,6 +1,6 @@
 # 🏛️ Parivar Path — Formal AI Counselling Evaluation Report
 **Smart India Hackathon 2026 — Problem Statement #26241 (MSDE)**  
-*Evaluation Timestamp: 2026-10-03 17:40:11 UTC*  
+*Evaluation Timestamp: 2026-10-16 01:56:05 UTC*  
 *Benchmark Dataset: 60 Multilingual Benchmark Conversations | 8 Evaluation Dimensions*  
 
 ---
@@ -53,13 +53,13 @@ The evaluation covers all 20 required challenge scenarios without synthetic posi
 | `further_study` | 4 | **100.0%** | Lateral entry mapping to Polytechnic / B.Voc degree ladders |
 | `grounding` | 2 | **100.0%** | Deterministic validator gate |
 | `hindi` | 16 | **100.0%** | Natural conversational Devanagari guidance and idioms |
-| `income` | 7 | **100.0%** | NCVT Tracer study database lookup; salary range grounding |
+| `income` | 7 | **100.0%** | outcome data lookup; salary range grounding |
 | `job_security` | 6 | **100.0%** | Placement rate citation; refusal to promise 100% guarantee |
 | `missing_data` | 4 | **100.0%** | `verified_data_unavailable` contract; refuses to invent numbers |
 | `multilingual` | 4 | **100.0%** | Code-mixing support across Hinglish, Tenglish, Tanglish, Pure English |
-| `provider_quality` | 4 | **100.0%** | Affiliation filter (NCVT/SCVT government-accredited centres only) |
+| `provider_quality` | 4 | **100.0%** | Affiliation filter (government-accredited centres only) |
 | `refusal_to_fabricate` | 11 | **100.0%** | Deterministic validator gate |
-| `safety` | 6 | **100.0%** | NCVT workshop PPE standards; supervised industrial protocol |
+| `safety` | 6 | **100.0%** | workshop PPE standards; supervised industrial protocol |
 | `social_status` | 4 | **100.0%** | NSQF technical supervisor qualification positioning |
 | `synthetic_rejection` | 1 | **100.0%** | Deterministic validator gate |
 | `tamil` | 11 | **100.0%** | Verified Tamil vocational guidance for Tamil Nadu centres |

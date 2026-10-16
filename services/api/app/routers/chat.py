@@ -12,6 +12,8 @@ from app.routers.auth import family_user
 from app.core.rate_limit import enforce_rate_limit
 from app.core.joint_counselling import record_answer, mark_evidence_discussed, request_escalation
 from app.core.escalation import create_escalation_ticket
+from app.core.crisis import handle_distress
+from app.core.safety import has_distress_signal
 from app.core.tools import get_outcomes
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ def _to_chat_response(payload: dict) -> ChatResponse:
 router = APIRouter()
 
 RATE_LIMIT_SESSION = 10
+MAX_CHAT_TEXT = 1000  # ChatRequest accepts up to 5000 so a long distress message still reaches the crisis check
 RATE_LIMIT_CHAT = 30
 RATE_LIMIT_JOINT = 20
 
@@ -79,6 +82,12 @@ async def update_session(id: uuid.UUID, session_data: SessionUpdate, current_use
 # TODO: Add rate limiting here
 @router.post("/chat", response_model=ChatResponse)
 async def send_message(chat_req: ChatRequest, current_user=Depends(family_user), db: AsyncSession = Depends(get_db)):
+    # Crisis first: before the rate limit, the length limit, the trade requirement and any LLM call.
+    if has_distress_signal(chat_req.text):
+        return _to_chat_response(await handle_distress(db, current_user.id, chat_req.session_id, chat_req.text, chat_req.lang, chat_req.speaker))
+
+    if len(chat_req.text) > MAX_CHAT_TEXT:
+        raise HTTPException(status_code=422, detail=f"Message must be at most {MAX_CHAT_TEXT} characters")
     enforce_rate_limit(f"chat:{current_user.id}", RATE_LIMIT_CHAT)
     stmt = select(Session).where(Session.id == chat_req.session_id, Session.owner_id == current_user.id)
     result = await db.execute(stmt)

@@ -177,16 +177,18 @@ export default function ChatPage() {
       }
     } catch (err) {
       console.error(err);
+      // A daily or per-session limit cannot be fixed by retrying, so do not offer "retry" (it would loop).
+      const limited = err instanceof Error && /limit reached|too many requests/i.test(err.message);
       const fallbackAi: MessageItem = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         speaker: 'ai',
         content: t('verified_data_unavailable'),
         citations: [],
-        suggested_chips: [t('talk_to_counsellor'), t('retry_message')]
+        suggested_chips: limited ? [t('talk_to_counsellor')] : [t('talk_to_counsellor'), t('retry_message')]
       };
       setMessages(prev => [...prev, fallbackAi]);
-      setFailedText(textToSend);
+      setFailedText(limited ? null : textToSend);
       if (ttsEnabled) {
         speakText(fallbackAi.content, language);
       }

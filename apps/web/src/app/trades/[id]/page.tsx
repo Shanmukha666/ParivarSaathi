@@ -264,7 +264,7 @@ export default function TradeDetail({ params }: { params: { id: string } }) {
                     {p.outcomes.sample_size != null ? ` • ${p.outcomes.sample_size} learners` : ''}{p.outcomes.year ? ` • ${p.outcomes.year}` : ''}
                   </div>
                 ) : (
-                  <div className="mt-1.5 text-slate-500">This centre's own outcomes: not available</div>
+                  <div className="mt-1.5 text-slate-500">This centre&apos;s own outcomes: not available</div>
                 )}
                 <div className={p.is_synthetic ? 'text-amber-700 font-semibold' : 'text-emerald-700 font-semibold'}>
                   {p.is_synthetic ? 'DEMO / SYNTHETIC PROVIDER DATA' : 'VERIFIED CENTRE DATA'}

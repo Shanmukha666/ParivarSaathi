@@ -19,42 +19,109 @@ import { createSupabaseAdminClient } from '../../../lib/supabase-admin';
 import {
   crisisReply,
   hasDistressSignal as detectsDistress,
+  type Lang,
 } from '../../../lib/safety';
 import { hasSupabaseConfig, isDemoMode } from '../../../lib/demo-mode';
 import { evidenceReply } from '../../../lib/demo-answers';
+import { fail, isUuid } from '../../../lib/guard';
+import { isLang, isQuotaError, readJson, str } from '../../../lib/http';
+import { redactPersonalData } from '../../../lib/redact';
+import { ensureTicket } from '../../../lib/escalation';
+import { writeSessionState } from '../../../lib/session-state';
 
 const MAX_MESSAGES_PER_SESSION = 30;
+const MAX_TEXT = 1000; // matches the messages.text CHECK constraint
+// A long, desperate message must still reach the crisis check even though it is too long to store.
+const CRISIS_SCAN_CHARS = 5000;
 
-function redactPersonalData(value: string) {
-  return value
-    .replace(
-      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
-      '[email removed]',
-    )
-    .replace(/\b[6-9]\d{9}\b/g, '[phone removed]');
+/**
+ * Distress path. It runs BEFORE rate limits, length limits, the trade requirement, the per-session
+ * cap and the daily quota, because none of those may ever stand between a person in distress and the
+ * helpline number. It makes no LLM call. Database work is best effort, and the reply only claims a
+ * counsellor was notified if the urgent ticket really was created.
+ */
+async function handleDistress(
+  supabase: any,
+  userId: string,
+  sessionId: string | null,
+  text: string,
+  lang: Lang,
+  speaker: 'learner' | 'parent',
+) {
+  let notified = false;
+  if (sessionId && enforceRateLimit(`crisis:${userId}`, 20)) {
+    try {
+      // Keep the message so the counsellor sees what was said (redacted; the callback number has its own consent flow).
+      const { data: saved } = await supabase
+        .from('messages')
+        .insert({ session_id: sessionId, speaker, text: redactPersonalData(text).slice(0, MAX_TEXT), lang })
+        .select('id')
+        .single();
+      if (saved) {
+        const analysis = analyseMessage(text);
+        await createSupabaseAdminClient().from('message_analysis').insert({
+          message_id: saved.id,
+          objection_category: analysis.objection,
+          sentiment: analysis.sentiment,
+          intent: analysis.intent,
+        });
+      }
+    } catch (error) {
+      console.error('[chat] could not store distress message', error);
+    }
+
+    try {
+      const { error } = await supabase.rpc('raise_distress', { p_session: sessionId });
+      notified = !error;
+      if (error) console.error('[chat] distress escalation failed', error);
+    } catch (error) {
+      console.error('[chat] distress escalation threw', error);
+    }
+
+    if (notified) {
+      try {
+        const { data: row } = await supabase.from('sessions').select('concern_state').eq('id', sessionId).eq('owner_id', userId).single();
+        await writeSessionState(sessionId, userId, {
+          concern_state: updateConcernState(row?.concern_state as Partial<ConcernState> | null, classifyConcerns(text), [], 'escalated'),
+        });
+      } catch (error) {
+        console.error('[chat] could not update concern state', error);
+      }
+    }
+  }
+
+  return NextResponse.json({
+    reply: crisisReply(lang, notified),
+    citations: [],
+    suggested_chips: [],
+    escalate: notified,
+    escalate_reason: 'distress_signal',
+    priority: 'urgent',
+  });
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
-    session_id?: string;
-    speaker?: 'learner' | 'parent';
-    text?: string;
-    trade_id?: number;
-    lang?: 'en' | 'te' | 'hi' | 'ta';
-  };
+  const body = await readJson(request);
+  if (!body) return fail(400, 'invalid_json');
+
+  const text = typeof body.text === 'string' ? body.text : null;
+  const lang: Lang = isLang(body.lang) ? body.lang : 'en';
+  const speaker = body.speaker === 'learner' || body.speaker === 'parent' ? body.speaker : null;
+  const sessionId = isUuid(body.session_id) ? body.session_id : null;
 
   if (isDemoMode()) {
+    if (text === null) return fail(400, 'invalid_message');
     // Safety first: crisis messages must never reach the canned evidence answers.
-    if (detectsDistress(body.text || '')) {
+    if (detectsDistress(text.slice(0, CRISIS_SCAN_CHARS))) {
       return NextResponse.json({
-        reply: crisisReply(body.lang || 'en'),
+        reply: crisisReply(lang),
         citations: [],
         suggested_chips: [],
         escalate: true,
         escalate_reason: 'distress_signal',
       });
     }
-    return NextResponse.json(evidenceReply(body.text || '', body.lang || 'en', Number(body.trade_id) || undefined));
+    return NextResponse.json(evidenceReply(text, lang, Number(body.trade_id) || undefined));
   }
 
   if (!hasSupabaseConfig()) {
@@ -65,29 +132,18 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
-  if (!enforceRateLimit(`chat:${user.id}`, 30)) {
-    return NextResponse.json(
-      { error: 'Too many requests' },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': '60',
-        },
-      },
-    );
+  // Crisis first, before any limit or validation that could reject the request.
+  if (text !== null && detectsDistress(text.slice(0, CRISIS_SCAN_CHARS))) {
+    return handleDistress(supabase, user.id, sessionId, text, lang, speaker ?? 'parent');
   }
 
-  if (
-    !body.session_id ||
-    !body.text ||
-    !body.speaker ||
-    !body.lang ||
-    body.text.length > 1000
-  ) {
-    return NextResponse.json(
-      { error: 'Invalid message' },
-      { status: 400 },
-    );
+  if (!enforceRateLimit(`chat:${user.id}`, 30)) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': '60' } });
+  }
+
+  const messageText = str(text, MAX_TEXT);
+  if (!sessionId || !messageText || !messageText.trim() || !speaker || !isLang(body.lang)) {
+    return NextResponse.json({ error: 'Invalid message' }, { status: 400 });
   }
 
   const { data: session, error: sessionError } = await supabase
@@ -95,7 +151,7 @@ export async function POST(request: Request) {
     .select(
       'id, owner_id, state, district, lang, selected_trade_id, concern_state, learner_class, income_bracket, trades(name_en)',
     )
-    .eq('id', body.session_id)
+    .eq('id', sessionId)
     .eq('owner_id', user.id)
     .single();
 
@@ -110,99 +166,47 @@ export async function POST(request: Request) {
   const { count } = await supabase
     .from('messages')
     .select('id', { count: 'exact', head: true })
-    .eq('session_id', body.session_id);
+    .eq('session_id', sessionId);
 
   if ((count || 0) >= MAX_MESSAGES_PER_SESSION) {
-    return NextResponse.json(
-      {
-        error: 'Session message limit reached',
-        code: 'SESSION_CAP',
-      },
-      { status: 429 },
-    );
+    return NextResponse.json({ error: 'Session message limit reached', code: 'SESSION_CAP' }, { status: 429 });
   }
+
+  // Phone numbers and emails typed into chat are redacted before storage as well as before the LLM:
+  // a callback number belongs in the explicit-consent escalation flow, not in the transcript.
+  const safeText = redactPersonalData(messageText).slice(0, MAX_TEXT);
 
   const { data: familyMessage, error: insertError } = await supabase
     .from('messages')
-    .insert({
-      session_id: body.session_id,
-      speaker: body.speaker,
-      text: body.text,
-      lang: body.lang,
-    })
+    .insert({ session_id: sessionId, speaker, text: safeText, lang: body.lang })
     .select('id')
     .single();
 
   if (insertError) {
-    return NextResponse.json(
-      { error: 'Could not save message' },
-      { status: 500 },
-    );
+    if (isQuotaError(insertError)) {
+      return NextResponse.json({ error: 'Daily message limit reached', code: 'DAILY_QUOTA' }, { status: 429, headers: { 'Retry-After': '3600' } });
+    }
+    return fail(500, 'message_not_saved', insertError);
   }
 
   if (familyMessage) {
     try {
-      const analysis = analyseMessage(body.text);
-
-      await createSupabaseAdminClient()
-        .from('message_analysis')
-        .insert({
-          message_id: familyMessage.id,
-          objection_category: analysis.objection,
-          sentiment: analysis.sentiment,
-          intent: analysis.intent,
-        });
+      const analysis = analyseMessage(messageText);
+      await createSupabaseAdminClient().from('message_analysis').insert({
+        message_id: familyMessage.id,
+        objection_category: analysis.objection,
+        sentiment: analysis.sentiment,
+        intent: analysis.intent,
+      });
     } catch (error) {
       console.error('message analysis write failed', error);
     }
   }
 
-  const classification = classifyConcerns(body.text);
+  const classification = classifyConcerns(messageText);
+  const concernState = updateConcernState(session.concern_state as Partial<ConcernState> | null, classification);
 
-  const concernState = updateConcernState(
-    session.concern_state as Partial<ConcernState> | null,
-    classification,
-  );
-
-  await supabase
-    .from('sessions')
-    .update({
-      concern_state: concernState,
-    })
-    .eq('id', session.id)
-    .eq('owner_id', user.id);
-
-  if (detectsDistress(body.text)) {
-    const { error: distressError } = await supabase.rpc('raise_distress', {
-      p_session: session.id,
-    });
-
-    if (distressError) {
-      console.error('distress escalation failed', distressError);
-    }
-
-    await supabase
-      .from('sessions')
-      .update({
-        concern_state: updateConcernState(
-          concernState,
-          classification,
-          [],
-          'escalated',
-        ),
-      })
-      .eq('id', session.id)
-      .eq('owner_id', user.id);
-
-    return NextResponse.json({
-      reply: crisisReply(body.lang),
-      citations: [],
-      suggested_chips: [],
-      escalate: true,
-      escalate_reason: 'distress_signal',
-      priority: 'urgent',
-    });
-  }
+  await writeSessionState(session.id, user.id, { concern_state: concernState });
 
   let outcomes: VerifiedOutcome | null = null;
   let evidenceMetrics: EvidenceMetric[] = [];
@@ -223,10 +227,7 @@ export async function POST(request: Request) {
 
     if (metricRows?.length) {
       const values = Object.fromEntries(
-        metricRows.map((row: any) => [
-          row.metric_key,
-          row.metric_value ?? row.metric_text,
-        ]),
+        metricRows.map((row: any) => [row.metric_key, row.metric_value ?? row.metric_text]),
       );
 
       const latest = metricRows[0] as any;
@@ -243,9 +244,7 @@ export async function POST(request: Request) {
         salary_3yr_max: null,
         sample_size: latest.sample_size ?? 0,
         cohort_year: latest.year,
-        source: source?.publisher
-          ? `${source.publisher}: ${source.title}`
-          : 'Source reference unavailable',
+        source: source?.publisher ? `${source.publisher}: ${source.title}` : 'Source reference unavailable',
         verified_on: latest.verification_date,
         verified: true,
         is_synthetic: false,
@@ -257,58 +256,39 @@ export async function POST(request: Request) {
 
   evidence = assessEvidence(evidenceMetrics);
 
-  await supabase
-    .from('sessions')
-    .update({
-      concern_state: updateConcernState(
-        concernState,
-        classification,
-        evidence.citations,
-      ),
-    })
-    .eq('id', session.id)
-    .eq('owner_id', user.id);
+  await writeSessionState(session.id, user.id, {
+    concern_state: updateConcernState(concernState, classification, evidence.citations),
+  });
 
-  if (
-    session.selected_trade_id &&
-    body.text &&
-    requiresQuantitativeEvidence(body.text) &&
-    !evidence.usable
-  ) {
+  // Persist an AI-side message. A failure to save must never discard a good answer or change what
+  // the family sees, so this only logs.
+  const saveAiMessage = async (reply: string) => {
+    const { error } = await createSupabaseAdminClient()
+      .from('messages')
+      .insert({ session_id: sessionId, speaker: 'ai', text: reply, lang: body.lang });
+    if (error) console.error('[chat] could not save AI message', error);
+  };
+
+  if (requiresQuantitativeEvidence(messageText) && !evidence.usable) {
     const reason = evidence.reason;
-
     const reply =
       reason === 'conflicting_verified_data'
         ? 'Verified sources give conflicting figures for this question. I will not choose one number without a counsellor reviewing the sources.'
         : 'Verified information is unavailable for this question. I can connect you with a human counsellor.';
 
-    await supabase.from('escalations').insert({
-      session_id: session.id,
-      reason,
-      status: 'new',
-      priority: 'high',
-      language: session.lang,
-      district: session.district,
-    });
-
-    await supabase
-      .from('sessions')
-      .update({
-        concern_state: updateConcernState(
-          concernState,
-          classification,
-          evidence.citations,
-          'escalated',
-        ),
-      })
-      .eq('id', session.id)
-      .eq('owner_id', user.id);
+    // The flag tells the UI to show "counsellor alerted", so it must reflect a ticket that exists.
+    const escalated = await ensureTicket(supabase, session.id, reason);
+    if (escalated) {
+      await writeSessionState(session.id, user.id, {
+        concern_state: updateConcernState(concernState, classification, evidence.citations, 'escalated'),
+      });
+    }
 
     return NextResponse.json({
       reply,
       citations: evidence.citations,
       suggested_chips: ['Talk to a counsellor'],
-      escalate: true,
+      escalate: escalated,
       escalate_reason: reason,
     });
   }
@@ -318,53 +298,34 @@ export async function POST(request: Request) {
 
     const result = await provider.generate({
       language: body.lang,
-      speaker: body.speaker,
-      userMessage: redactPersonalData(body.text),
-      location: {
-        state: session.state,
-        district: session.district,
-      },
+      speaker,
+      userMessage: safeText,
+      location: { state: session.state, district: session.district },
       household: { incomeBracket: session.income_bracket, learnerClass: session.learner_class },
       tradeName: (session.trades as { name_en?: string } | null)?.name_en,
       verifiedOutcomes: outcomes,
       verifiedEvidence: evidence.metrics,
     });
 
-    const { error: aiMessageError } = await createSupabaseAdminClient()
-      .from('messages')
-      .insert({
-        session_id: body.session_id,
-        speaker: 'ai',
-        text: result.text,
-        lang: body.lang,
-      });
-
-    if (aiMessageError) {
-      throw aiMessageError;
-    }
-
+    // Validate BEFORE anything is stored, so an unsupported statistic never enters the transcript.
     const unsupported = validateGeneratedNumbers(result.text, evidence);
 
     if (unsupported.length) {
-      await supabase.from('escalations').insert({
-        session_id: session.id,
-        reason: 'unsupported_numeric_claim',
-        status: 'new',
-        priority: 'high',
-        language: session.lang,
-        district: session.district,
-      });
-
+      const escalated = await ensureTicket(supabase, session.id, 'unsupported_numeric_claim');
+      const reply = escalated
+        ? 'I could not verify every number in that response. I will connect you with a counsellor rather than provide an unsupported statistic.'
+        : 'I could not verify every number in that response, so I will not share an unsupported statistic. Please ask a human counsellor for these figures.';
+      await saveAiMessage(reply);
       return NextResponse.json({
-        reply:
-          'I could not verify every number in that response. I will connect you with a counsellor rather than provide an unsupported statistic.',
+        reply,
         citations: evidence.citations,
         suggested_chips: ['Talk to a counsellor'],
-        escalate: true,
+        escalate: escalated,
         escalate_reason: 'unsupported_numeric_claim',
       });
     }
 
+    await saveAiMessage(result.text);
     return NextResponse.json({
       reply: result.text,
       citations: evidence.citations,
@@ -372,8 +333,7 @@ export async function POST(request: Request) {
       escalate: false,
     });
   } catch (error) {
-    const rateLimited =
-      error instanceof Error && error.message === 'AI_RATE_LIMITED';
+    const rateLimited = error instanceof Error && error.message === 'AI_RATE_LIMITED';
 
     console.error('Gemini/provider error:', error);
 

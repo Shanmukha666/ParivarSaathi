@@ -5,9 +5,11 @@
 
 ---
 
-![Tests](https://img.shields.io/badge/pytest-138%20passed-brightgreen.svg)
+![Tests](https://img.shields.io/badge/pytest-167%20passed-brightgreen.svg)
 [![Evaluation Suite](https://img.shields.io/badge/AI%20Eval-60%2F60%20passed%20(100%25)-blue.svg)](docs/EVALUATION_REPORT.md)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict%20(0%20errors)-blue.svg)](apps/web)
+![Vitest](https://img.shields.io/badge/vitest-108%20passed-brightgreen.svg)
+![RLS](https://img.shields.io/badge/database%20RLS%20checks-69%20passed-brightgreen.svg)
 ![Next.js Build](https://img.shields.io/badge/Next.js-14.2.35%20Secured-black.svg)
 [![Security Audit](https://img.shields.io/badge/Security-Red--Team%20Audited-success.svg)](docs/SECURITY_REVIEW.md)
 [![Architecture](https://img.shields.io/badge/Architecture-3--Tier%20Resilient-indigo.svg)](docs/ARCHITECTURE.md)
@@ -25,7 +27,7 @@ In Indian households, vocational education (ITI, polytechnic, PMKVY) decisions a
 
 ## 🚀 Key Architectural Pillars
 
-### 1. 🛡️ Zero-Fabrication Grounding Guarantee
+### 1. 🛡️ Number-Grounding Checks
 - **Number Validator**: Extracts every numerical claim (percentage, salary, months) from AI responses and compares them strictly against query tool results.
 - **Refusal to Invent**: The system explicitly refuses unsupported statistical demands (e.g. guaranteeing ₹1,00,000/month starting salaries) and suggests counsellor escalations instead.
 - **Strict Synthetic vs. Verified Separation**: Unverified or synthetic data is strictly flagged and filtered out of formal parent citations.
@@ -36,14 +38,14 @@ In Indian households, vocational education (ITI, polytechnic, PMKVY) decisions a
   - **Metric Key & Value** (e.g. `₹16,500/month`, `78.4% placed`)
   - **Location & Trade** (e.g. `Warangal, Telangana | Electrician`)
   - **Cohort Year & Sample Size** (e.g. `2024 cohort, N=42`)
-  - **Authoritative Source & Document Reference** (e.g. `NCVT Tracer Study, Table 4.1`)
+  - **Source & Document Reference** (the real publisher once the organisers' dataset is loaded; today every value is labelled demo data)
   - **Verification Status** (`verified` vs `synthetic`)
 
-### 3. 🗣️ Native Multilingual Dialogue (4 Languages)
-- Fully localized in **Telugu (తెలుగు)**, **Hindi (हिन्दी)**, **Tamil (தமிழ்)**, and **English**.
+### 3. 🗣️ Four-Language Dialogue
+- Localized in **Telugu (తెలుగు)**, **Hindi (हिन्दी)**, **Tamil (தமிழ்)**, and **English**. Telugu, Hindi and Tamil text has **not yet had native-speaker review**; the sheet to review is [`docs/LANGUAGE_REVIEW.md`](docs/LANGUAGE_REVIEW.md).
 - Employs colloquial regional phrasing for objection handling (e.g., *జీతం*, *ఉద్యోగం వస్తుందా*, *ఇజ్జత్*, *பாதுகாப்பு*).
 
-### 4. 🔒 Privacy & Minor Protection (DPDP Compliant)
+### 4. 🔒 Privacy & Minor Protection (designed around the DPDP Act; not legally reviewed)
 - Automatic minor detection (`age < 18` enforces explicit guardian consent).
 - PII redaction layer filters out 10-digit Indian phone numbers and emails before LLM prompt assembly.
 - Masked callback numbers (`98****3210`) in the counsellor queue; only unmasked once assigned counsellor initiates contact.
@@ -80,7 +82,7 @@ python run_sih_demo.py --delay 0.5
 5. **Trade selection** — Learner explores and selects Electrician (NSQF Level 4).
 6. **Parent raises job-security concern** — Native Telugu question on employment anxiety.
 7. **Concern classification** — NLP identifies category `job_security` with `HIGH` intensity.
-8. **Verified data retrieval** — Retrieves NCVT Tracer Study (filters out synthetic records).
+8. **Data retrieval** — Retrieves the demo-fixture record and labels it as demo data.
 9. **Evidence display** — AI responds in Telugu citing 78% placement with NCVT Table 4.1 citation.
 10. **Parent asks about earnings** — Inquiry on first-month wages.
 11. **Grounded response** — System validates ₹16,500 and intercepts hallucinated figures.
@@ -123,8 +125,8 @@ Full report available at: [`docs/EVALUATION_REPORT.md`](docs/EVALUATION_REPORT.m
 ## 💻 Tech Stack & Architecture
 
 - **Frontend**: Next.js 14 (App Router), TypeScript, Tailwind CSS, Lucide Icons, Recharts, Leaflet Heatmap.
-- **Backend API**: FastAPI, Python 3.13, Pydantic v2, SQLAlchemy (Async), aiosqlite / PostgreSQL.
-- **Security & Auth**: Supabase JWT / PyJWKClient, Role-Based Access Control (Admin, Counsellor, Family), in-memory sliding window rate limiter.
+- **Backend API**: FastAPI, Python 3.12, Pydantic v2, SQLAlchemy (Async), aiosqlite / PostgreSQL.
+- **Security & Auth**: Supabase JWT / PyJWKClient, Role-Based Access Control (Admin, Counsellor, Family), rate limiter (shared via Redis when `REDIS_URL` is set, per-process otherwise).
 - **Testing**: Pytest, AsyncIO, Next.js Production Compiler (`next build`).
 
 ---
@@ -136,13 +138,20 @@ Full report available at: [`docs/EVALUATION_REPORT.md`](docs/EVALUATION_REPORT.m
 cd services/api
 python -m venv venv
 # Activate virtual environment
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
-# Run all 136 tests
+# Run all 167 tests
 pytest tests/ -v
 
 # Run API server
 uvicorn app.main:app --reload --port 8000
+```
+
+### Database (migrations + row-level security):
+```bash
+# Needs only a reachable Postgres and psql. Builds a fresh database, applies every migration in order,
+# then runs 69 red-team checks (families, counsellors, admin, anon).
+PGHOST=localhost PGPORT=5432 PGUSER=postgres bash tools/verify_rls.sh
 ```
 
 ### Frontend Web PWA:
@@ -150,8 +159,8 @@ uvicorn app.main:app --reload --port 8000
 cd apps/web
 npm install
 
-# Typecheck
-npx tsc --noEmit
+# Typecheck, lint, unit tests (108), i18n and voice contracts
+npx tsc --noEmit && npm run lint && npx vitest run && npm run test:i18n && npm run test:voice
 
 # Production build
 npm run build
@@ -163,7 +172,7 @@ npm run dev
 ---
 
 ## 📜 Compliance & Safety Standards
-- **DPDP Act 2023**: Minor consent gates, non-identifying session tokens, right to forget.
+- **DPDP Act 2023**: designed around minor consent gates, non-identifying session tokens and deletion. Not reviewed by a lawyer.
 - **Responsible AI**: Deterministic fallback classifiers, numeric grounding validation, prompt injection shields.
 - **Accessibility**: High contrast mode, min 48px tap targets, regional screen reader & text-to-speech integration.
 
@@ -182,6 +191,15 @@ Read the printed report (columns understood, rows skipped and why), paste `impor
 ## Supabase migrations (run in order)
 
 All files in `supabase/migrations/` in filename order. The newest are `20261007000100` (labelled dummy seed data), `20261007000200` (canonical trade IDs), `20261009000100` (admin breakdowns, staff-only, groups under 5 hidden) and `20261009000200` (earnings ranges). Enable **Anonymous sign-ins** in Supabase Auth settings, because families use the app without an account.
+
+## Before demo day: prove it works live
+
+```
+export GEMINI_API_KEY=...  NEXT_PUBLIC_SUPABASE_URL=...  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+python tools/live_preflight.py --json
+```
+
+Checks that every Gemini model in the chain exists, that Telugu, Hindi, Tamil and English replies come back in the right script, that the tool-call round trip works, that public tables have data, and that private tables return nothing to the browser key. It also records latency and token use. Set `GEMINI_FALLBACK_MODELS` (default `gemini-2.5-flash`) so one bad model name cannot silently degrade chat. Measured performance so far: [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 ## Smoke test a deployed site
 
@@ -214,3 +232,13 @@ To maintain 100% academic and hackathon honesty:
 - [🚀 Future Roadmap: WhatsApp, IVR & Live Scraping](docs/FUTURE_ENHANCEMENTS.md)
 - [📊 Evaluation Report (Benchmark Results)](docs/EVALUATION_REPORT.md)
 
+
+## Known limits (honest status)
+
+- Not yet run live end to end (Gemini + Supabase + Vercel together): use the preflight above.
+- All outcome data is dummy until the organisers' file is imported.
+- No sessions with real families yet; `/research` is ready to record them.
+- Telugu, Hindi and Tamil text awaits native review; Tamil has fewer distress phrases (10) than Telugu (19).
+- `next@14.2.35` has an open advisory about the image optimizer. The app does not use `next/image` and the optimizer is disabled in `next.config.js`; upgrading to Next 16 needs React 19 and a retest.
+- The organisers' dummy dataset can be imported but is not yet *displayed* by the live app; see [`docs/OPEN_DECISIONS.md`](docs/OPEN_DECISIONS.md).
+- CI (`.github/workflows/ci.yml`) runs the backend, frontend and database suites on every push; the Docker images have not been built in this environment.

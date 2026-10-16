@@ -115,10 +115,10 @@ async def run_5min_demo(auto: bool = False, delay: float = 0.5):
         # ── Seed Base Fixtures ───────────────────────────────────────────────
         ds_verified = DataSource(
             id=1,
-            publisher="NCVT Tracer Study / MSDE",
+            publisher="Example Source (demo fixture)",
             title="National Vocational Tracer & Placement Study - Telangana Cohort",
             source_url="https://ncvt.gov.in/reports/2024/telangana-tracer.pdf",
-            document_reference="Table 4.1 & 4.2",
+            document_reference="Demo Table A & B",
             retrieved_on=datetime(2024, 6, 1).date()
         )
         ds_synthetic = DataSource(
@@ -363,7 +363,7 @@ async def run_5min_demo(auto: bool = False, delay: float = 0.5):
         # SCENE 5 — EVIDENCE
         # ══════════════════════════════════════════════════════════════════════
         print_scene_header(5, "2:00 - 2:30", "Verified Localized Evidence",
-                           "System retrieves official NCVT tracer data for Warangal, ignoring synthetic records.")
+                           "System retrieves demo-fixture outcome data for Warangal, ignoring synthetic records.")
         stmt = (
             select(OutcomeMetric, DataSource)
             .join(DataSource, OutcomeMetric.source_id == DataSource.id)
@@ -398,16 +398,16 @@ async def run_5min_demo(auto: bool = False, delay: float = 0.5):
             }
         }
         ai_reply_grounded = (
-            "వరంగల్ జిల్లాలో NCVT అధికారిక సర్వే (Table 4.1) ప్రకారం "
+            "వరంగల్ జిల్లాలో డెమో నమూనా డేటా (Demo Table A) ప్రకారం "
             "ఎలక్ట్రీషియన్ కోర్సు పూర్తి చేసిన వారిలో 78% మందికి ఉపాధి లభించింది."
         )
         is_valid, unmatched = validate_reply(ai_reply_grounded, tool_results)
 
-        print(f"  {Colors.BOLD}[OFFICIAL RETRIEVAL]{Colors.RESET}: NCVT Tracer Study 2024 / MSDE")
+        print(f"  {Colors.BOLD}[OFFICIAL RETRIEVAL]{Colors.RESET}: Example Source 2024 (demo fixture)")
         print(f"  - District Placement Rate: 78.4% (Sample Size: 42 ITI Graduates in Warangal)")
         print(f"  - Synthetic Records Filtered: 1 unverified demo record suppressed")
         print(f"  {Colors.BOLD}[AI COUNSELLOR REPLY (Telugu)]{Colors.RESET}: \"{ai_reply_grounded}\"")
-        print_badge("Evidence displayed with verifiable NCVT data reference and 100% number grounding")
+        print_badge("Evidence displayed with labelled demo-data reference and 100% number grounding")
         wait_prompt(auto, delay)
 
         # ══════════════════════════════════════════════════════════════════════
@@ -421,7 +421,7 @@ async def run_5min_demo(auto: bool = False, delay: float = 0.5):
             "Metric": "Starting Monthly Salary (ప్రారంభ వేతనం)",
             "Value": f"₹{m_earnings_row['value']:,.0f} / month",
             "District / State": "Warangal, Telangana",
-            "Trade": "Electrician (NCVT Level 4)",
+            "Trade": "Electrician (NSQF Level 4)",
             "Sample Size": f"{m_earnings_row['sample_size']} graduates tracked",
             "Cohort Year": f"{m_earnings_row['year']} batch",
             "Official Source": m_earnings_row["source"]["publisher"],

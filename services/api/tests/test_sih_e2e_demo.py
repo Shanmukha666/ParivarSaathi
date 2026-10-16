@@ -59,10 +59,10 @@ async def e2e_db():
         # 1. Seed Verified Data Source
         source = DataSource(
             id=1,
-            publisher="NCVT Tracer Study / MSDE",
+            publisher="Example Source (demo fixture)",
             title="Vocational Outcomes Survey 2024",
             source_url="https://ncvt.gov.in/reports/2024",
-            document_reference="Table 4.1",
+            document_reference="Demo Table A",
             retrieved_on=date(2024, 6, 1)
         )
         db.add(source)
@@ -347,11 +347,11 @@ async def test_sih_end_to_end_demonstration_flow(e2e_db):
     # ── Step 9: System displays evidence ──────────────────────────────────────
     citations = source_citations(tool_results)
     assert len(citations) >= 1
-    assert citations[0]["publisher"] == "NCVT Tracer Study / MSDE"
-    assert citations[0]["document_reference"] == "Table 4.1"
+    assert citations[0]["publisher"] == "Example Source (demo fixture)"
+    assert citations[0]["document_reference"] == "Demo Table A"
 
     # Telugu response citing the verified 78% placement rate
-    ai_reply_1 = "వరంగల్ జిల్లాలో NCVT అధికారిక సర్వే (Table 4.1) ప్రకారం ఎలక్ట్రీషియన్ పూర్తి చేసిన వారిలో 78% మందికి ఉపాధి లభించింది."
+    ai_reply_1 = "వరంగల్ జిల్లాలో డెమో నమూనా డేటా (Demo Table A) ప్రకారం ఎలక్ట్రీషియన్ పూర్తి చేసిన వారిలో 78% మందికి ఉపాధి లభించింది."
     is_valid_1, unmatched_1 = validate_reply(ai_reply_1, tool_results)
     assert is_valid_1 is True
     assert len(unmatched_1) == 0
@@ -369,7 +369,7 @@ async def test_sih_end_to_end_demonstration_flow(e2e_db):
 
     # ── Step 11: System returns only grounded data ────────────────────────────
     # Starting earnings from database is ₹16,500, growing to ₹26,000
-    ai_reply_2 = "ధృవీకరించబడిన డేటా (Table 4.2) ప్రకారం మొదటి నెల సగటు వేతనం ₹16,500. మూడు సంవత్సరాల అనుభవంతో ₹26,000 వరకు సంపాదించవచ్చు."
+    ai_reply_2 = "ధృవీకరించబడిన డేటా (Demo Table B) ప్రకారం మొదటి నెల సగటు వేతనం ₹16,500. మూడు సంవత్సరాల అనుభవంతో ₹26,000 వరకు సంపాదించవచ్చు."
     is_valid_2, unmatched_2 = validate_reply(ai_reply_2, tool_results)
     assert is_valid_2 is True
     assert len(unmatched_2) == 0
@@ -393,9 +393,9 @@ async def test_sih_end_to_end_demonstration_flow(e2e_db):
         "trade": trade.name_en,
         "sample_size": 42,
         "year": 2024,
-        "source": "NCVT Tracer Study / MSDE",
+        "source": "Example Source (demo fixture)",
         "source_url": "https://ncvt.gov.in/reports/2024",
-        "document_reference": "Table 4.2",
+        "document_reference": "Demo Table B",
         "verification_status": "verified",
         "is_synthetic": False
     }

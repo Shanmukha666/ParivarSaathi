@@ -196,7 +196,7 @@ def test_chat_response_accepts_structured_citations():
     payload = ChatResponse(
         reply="I'm here to help your family explore vocational training options.",
         citations=[{
-            "publisher": "NCVT Tracer Study / MSDE",
+            "publisher": "Example Source (demo fixture)",
             "title": "Graduate outcomes",
             "url": "https://example.test/outcomes",
             "verified": True,
@@ -204,7 +204,7 @@ def test_chat_response_accepts_structured_citations():
         suggested_chips=["How much can they earn?", "Talk to a counsellor"],
         escalate=False,
     )
-    assert payload.citations[0]["publisher"] == "NCVT Tracer Study / MSDE"
+    assert payload.citations[0]["publisher"] == "Example Source (demo fixture)"
     string_payload = ChatResponse(
         reply="Hello",
         citations=["official_source"],

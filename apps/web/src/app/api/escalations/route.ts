@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '../../../lib/supabase-server';
 import { enforceRateLimit } from '../../../lib/rate-limit';
+import { fail, isUuid } from '../../../lib/guard';
+import { pgMessage, readJson, str } from '../../../lib/http';
+import { normaliseIndianMobile } from '../../../lib/redact';
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -11,23 +14,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': '60' } });
   }
 
-  const body = await request.json() as {
-    session_id?: string;
-    reason?: string;
-    callback_phone?: string;
-    callback_phone_consent?: boolean;
-    callback_slot?: string;
-    priority?: 'normal' | 'high' | 'urgent';
-    concern_category?: string;
-  };
-  if (!body.session_id || !body.reason || body.reason.length > 1000) {
+  const body = await readJson(request);
+  if (!body) return fail(400, 'invalid_json');
+
+  const reason = str(body.reason, 1000);
+  if (!isUuid(body.session_id) || !reason) {
     return NextResponse.json({ error: 'Invalid escalation request' }, { status: 400 });
   }
-  if (body.callback_phone && !body.callback_phone_consent) {
+  const consent = body.callback_phone_consent === true;
+  const rawPhone = typeof body.callback_phone === 'string' ? body.callback_phone.trim() : '';
+  if (body.callback_phone != null && typeof body.callback_phone !== 'string') {
+    return NextResponse.json({ error: 'Invalid callback number' }, { status: 400 });
+  }
+  if (rawPhone && !consent) {
     return NextResponse.json({ error: 'Phone consent is required before storing a callback number' }, { status: 400 });
   }
-  if (body.callback_phone && !/^[6-9]\d{9}$/.test(body.callback_phone)) {
+  const phone = rawPhone ? normaliseIndianMobile(rawPhone) : null;
+  if (rawPhone && !phone) {
     return NextResponse.json({ error: 'Invalid callback number' }, { status: 400 });
+  }
+  const slot = body.callback_slot == null || body.callback_slot === '' ? null : str(body.callback_slot, 60);
+  if (body.callback_slot != null && body.callback_slot !== '' && !slot) {
+    return NextResponse.json({ error: 'Invalid callback time' }, { status: 400 });
   }
 
   const { data: session } = await supabase
@@ -42,14 +50,14 @@ export async function POST(request: Request) {
   // contact, preventing clients from forging status, assignee, or SLA values.
   const { data: escalationId, error } = await supabase.rpc('create_escalation', {
     p_session: session.id,
-    p_reason: body.reason,
+    p_reason: reason,
     p_priority: body.priority === 'high' ? 'high' : 'normal',
-    p_slot: body.callback_slot || null,
-    p_phone: body.callback_phone || null,
-    p_phone_consent: Boolean(body.callback_phone_consent),
+    p_slot: slot,
+    p_phone: phone,
+    p_phone_consent: consent,
   });
   if (error || !escalationId) {
-    const status = error?.message.includes('ticket_already_open') ? 409 : 400;
+    const status = pgMessage(error).includes('ticket_already_open') ? 409 : 400;
     return NextResponse.json({ error: status === 409 ? 'An open escalation already exists' : 'Could not create escalation' }, { status });
   }
 

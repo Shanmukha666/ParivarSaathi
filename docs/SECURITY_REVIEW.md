@@ -1,67 +1,56 @@
-# Security Architecture & Database Hardening Review
+# Security review (implemented controls and what has been verified)
 
-**Audit Subject**: `supabase/migrations/20261004000100_security_hardening.sql` (556 lines)  
-**Security Status**: Verified & Audited  
-**Threat Model Scope**: Smart India Hackathon PS #26241 (Multilingual Family Joint Vocational Guidance)
+"Verified" below means an automated check ran and passed in this repository's CI. Where a control is
+implemented but not independently tested, it says so. This is a self-review, not an external audit.
 
----
+## Defence in depth
 
-## 1. Executive Summary
+1. **Database (Supabase Postgres)** is the authority. Row-level security, column grants and
+   `SECURITY DEFINER` functions decide who can read or change what, regardless of what the app sends.
+2. **API routes** validate input shape and length, authenticate, authorise by `staff_roles`, and never
+   return raw database error text (`fail()` in `lib/guard.ts` logs it server-side).
+3. **Safety path**: the crisis check runs before every limit and gate, makes no LLM call, and only claims
+   a counsellor was notified if the urgent ticket really exists.
+4. **Browser**: CSP, HSTS, `X-Frame-Options: DENY`, no third-party origins (fonts are self-hosted).
 
-The database hardening migration establishes defense-in-depth across eight distinct security pillars, preventing privilege escalation, credential forging, queue tampering, and data exfiltration. Every policy was written and verified with a corresponding automated red-team test.
+## Verified in CI
 
----
+| Control | Evidence |
+|---|---|
+| All 11 migrations apply in order to an empty database | `tools/verify_rls.sh` |
+| 69 row-level-security checks (families, two counsellors, a district-restricted counsellor, admin, anon) | `supabase/tests/rls_test.py` |
+| Admins cannot read raw family transcripts | RLS check "ADMIN cannot read raw messages" |
+| A counsellor restricted to one district cannot see another district's tickets or transcripts | RLS checks for `CFAR` |
+| Callback phone is hidden until the counsellor accepts the ticket | RLS checks "phone HIDDEN / VISIBLE" |
+| Families cannot forge counsellor or AI messages, reassign sessions, self-assign tickets, or grant themselves roles | RLS checks |
+| `user_metadata.role = admin` is ignored | RLS check |
+| Admin aggregates suppress small groups (k < 10) | RLS checks |
+| API routes only update columns the database grants | `route-contract.test.ts` |
+| Counsellor workflow statements the API sends are accepted by the schema | RLS section "exact statements" |
+| Malformed or oversized input returns 400, never 500 | `chat-route.test.ts`, `http.test.ts` |
+| Phone numbers (all common Indian formats, Indic digits), emails and Aadhaar-style numbers are redacted before the LLM and before storage | `redact.test.ts` |
+| Crisis messages reach the helpline at the session cap, over the length limit, with no trade selected, and at the daily quota | `chat-route.test.ts` |
+| Hallucinated statistics never enter the transcript | `chat-route.test.ts` |
+| The FastAPI service answers distress with the helpline first, in all four languages, from the same source as the Next.js app | `test_crisis.py`, `safety-parity.test.ts` |
 
-## 2. Walkthrough by Section
+## Found and fixed during review
 
-### Section 0 & 1: Security Definer Isolation & Search Path Hardening (Lines 21–98)
-* **Vulnerability Mitigated**: Search path hijacking / schema substitution attacks.
-* **Mechanism**: Every helper function (`app.owns_session`, `app.counsellor_may_claim`, `public.is_staff`) explicitly specifies `SET search_path = ''`. Definer functions cannot resolve table names through user-controlled search paths.
-* **Non-Recursive Policies**: Ownership checks are isolated into dedicated boolean helper functions, preventing infinite recursion between `sessions` $\leftrightarrow$ `escalations` $\leftrightarrow$ `messages`.
+- Admins could read every family's raw chat transcript (policy re-opened by the demo-contract migration).
+- Counsellors in any district could read every new ticket (permissive policy overrode district scoping).
+- Counsellor `contact`, `resolve` and `close` calls were refused by the database; `close` also contradicted the status machine.
+- Live mode never saved `concern_state` or joint-counselling answers (families cannot write those columns).
+- `/api/health` was public and revealed configuration, a sample row and raw error text.
 
-### Section 2: Strict Table Constraints & Defaults (Lines 100–120)
-* **Default Synthetic Protection**: `outcomes` and `schemes` default `is_synthetic = true`. Any imported or unreviewed record is treated as unverified/synthetic by default until certified by an administrator.
-* **Logical Salary Order**: Check constraint `salary_3yr_min <= salary_3yr_max` prevents inverted or nonsensical wage records.
-* **Event Metadata Bounds**: `pg_column_size(metadata) <= 2048` prevents denial-of-service via oversized JSON blobs.
+## Known limits
 
-### Section 3: Performance & Unique Ticket Indexing (Lines 122–134)
-* **Index Coverage**: High-frequency predicates (`owner_id`, `district`, `counsellor_id`) are indexed to ensure RLS queries execute in sub-millisecond time.
-* **Duplicate Ticket Suppression**: Partial unique index `escalations_one_open_per_session` strictly enforces maximum one active ticket (`new`, `assigned`, `contacted`) per family session, preventing queue flooding.
-
-### Section 4: Deterministic State Machine Triggers (Lines 136–254)
-* **Status Guard**: Enforces the deterministic transition graph:
-  $$\text{new} \longrightarrow \text{assigned} \longrightarrow \text{contacted} \longrightarrow \text{resolved}$$
-  Families cannot mark their own tickets as resolved, and unassigned counsellors cannot transition tickets.
-* **Audit Trail**: Every escalation insert and status update is immutably appended to `public.audit_log`.
-* **Database Quotas**:
-  - `app.message_quota`: Maximum 100 messages/day per authenticated family.
-  - `app.session_quota`: Maximum 5 sessions/day per authenticated family.
-  Protects against token exhaustion and serverless compute abuse.
-
-### Section 5: Fine-Grained Row Level Security (Lines 256–333)
-* **Session Ownership**: Families can only read and mutate their own sessions (`owner_id = auth.uid()`).
-* **Masked Phone Access**: `escalation_contacts` is restricted so that only the assigned counsellor who has accepted the ticket can view the raw phone number, and only while the ticket remains active.
-* **Admin Privacy Guarantee**: Administrators have access to aggregated analytical views and KPI RPCs, but cannot view raw family transcript conversations.
-
-### Section 6: Least-Privilege Role Grants (Lines 335–353)
-* Direct table mutation (`INSERT`, `UPDATE`, `DELETE`) on core catalogs (`trades`, `outcomes`, `providers`, `schemes`) is revoked from `authenticated` and `anon`.
-* Only `service_role` and administrative migrations can modify trade curricula and placement metrics.
-
-### Section 7: Atomic Server-Side RPCs (Lines 355–428)
-* `create_escalation`: Atomically validates 10-digit Indian mobile regex (`^[6-9][0-9]{9}$`), phone consent, and session ownership before issuing a ticket.
-* `raise_distress`: High-priority safety path for distress signals. Bumps SLA to 1 hour and sets priority to `urgent` without duplicating tickets.
-
-### Section 8: Privacy-Preserving Analytical Aggregates (Lines 430–556)
-* **Differential Privacy / Small Sample Suppression**: All analytical views (`admin_kpis`, `admin_district_resistance`, `admin_objection_breakdown`) suppress metrics when $N < 10$ sessions to prevent de-anonymization of rural participants.
-
----
-
-## 3. Red-Team Test Coverage
-All controls above are validated in `services/api/tests/test_security_redteam.py`:
-- `test_pii_redaction_masks_indian_phone_numbers`
-- `test_rate_limiter_blocks_excessive_requests`
-- `test_ticket_cannot_be_resolved_without_contact`
-- `test_ticket_resolution_succeeds_when_contacted`
-- `test_unassigned_counsellor_cannot_contact_or_resolve_ticket`
-- `test_require_role_denies_unauthorized_roles`
-- `test_escalation_schema_rejects_invalid_phone`
+- **Rate limiting in the Next.js app is per server instance.** The durable limits are the database quotas
+  (100 messages/day, 5 sessions/day per user). The FastAPI service can share counters through Redis.
+- `script-src` needs `'unsafe-inline'` because Next.js 14 inlines bootstrap scripts.
+- `next@14.2.35` has an open advisory about the image optimizer. The app does not use `next/image` and
+  the optimizer is disabled in `next.config.js`. Moving to Next 16 needs React 19 and a retest.
+- The RLS suite runs against a stub of Supabase's `auth` schema, not against Supabase itself.
+- Live Gemini and Supabase behaviour has not been exercised from this repository (see
+  `tools/live_preflight.py`).
+- Telugu, Hindi and Tamil crisis text has not had native-speaker review, and the helpline numbers should be
+  re-checked against Tele-MANAS before any real deployment.
+- Not reviewed by a lawyer; "designed around the DPDP Act" is not a compliance claim.

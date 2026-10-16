@@ -128,7 +128,6 @@ export default function TradesPage() {
                         <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs">
                           <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-medium whitespace-nowrap">{trade.duration_months} Months</span>
                           <span className="bg-orange-50 text-orange-800 px-2 py-0.5 rounded-md font-medium whitespace-nowrap">NSQF Level {trade.nsqf_level}</span>
-                          <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md font-semibold whitespace-nowrap">High Demand</span>
                         </div>
                       </div>
                     </div>
