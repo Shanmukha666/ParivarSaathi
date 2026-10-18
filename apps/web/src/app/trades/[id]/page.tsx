@@ -75,7 +75,7 @@ export default function TradeDetail({ params }: { params: { id: string } }) {
       }
     }
     loadData();
-  }, [tradeId, profile.district, profile.state, sessionId, setSelectedTrade]);
+  }, [isHydrated, tradeId, validTradeId, profile.district, profile.state, profile.income, sessionId, setSelectedTrade]);
 
   if (loading) {
     return (
@@ -144,7 +144,7 @@ export default function TradeDetail({ params }: { params: { id: string } }) {
 
           <div className="grid grid-cols-2 gap-3 pt-1">
             <div className="bg-orange-50/60 p-3 rounded-xl border border-orange-100 text-center">
-              <div className="text-2xl font-black text-orange-600">{outcomes?.placement_rate != null ? `${outcomes.placement_rate}%` : 'Not available'}</div>
+              <div className={`font-black text-orange-600 leading-snug break-words ${outcomes?.placement_rate != null ? 'text-2xl' : 'text-base'}`}>{outcomes?.placement_rate != null ? `${outcomes.placement_rate}%` : 'Not available'}</div>
               <div className="text-[11px] text-slate-500 font-semibold">Placement Rate</div>
               {outcomes?.placement_rate != null && (
                 <WhyThisNumber variant="subtle" details={{
@@ -163,7 +163,7 @@ export default function TradeDetail({ params }: { params: { id: string } }) {
               )}
             </div>
             <div className="bg-orange-50/60 p-3 rounded-xl border border-orange-100 text-center flex flex-col justify-center">
-              <div className="text-lg sm:text-2xl font-black text-orange-600 leading-snug break-words">
+              <div className="text-base sm:text-xl font-black text-orange-600 leading-snug break-words">
                 {outcomes?.start_salary_min != null && outcomes?.start_salary_max != null ? (
                   <span className="text-sm sm:text-base font-extrabold block">
                     {`${formatCurrency(outcomes.start_salary_min, language)} – ${formatCurrency(outcomes.start_salary_max, language)}/mo`}

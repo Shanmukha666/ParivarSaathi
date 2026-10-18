@@ -21,15 +21,17 @@ export function isSupportedLanguage(lang: string): lang is Language {
   return SUPPORTED_LANGUAGES.includes(lang as Language);
 }
 
-export function useTranslation(lang: string) {
+export function translate(lang: string, key: TranslationKey, variables: Record<string, string | number> = {}) {
   const dict = dictionaries[isSupportedLanguage(lang) ? lang : 'en'];
-  return (key: TranslationKey, variables: Record<string, string | number> = {}) => {
-    const template = dict[key] || en[key];
-    if (!template) return key;
-    return template.replace(/\{(\w+)\}/g, (match, variable: string) =>
-      Object.prototype.hasOwnProperty.call(variables, variable) ? String(variables[variable]) : match,
-    );
-  };
+  const template = dict[key] || en[key];
+  if (!template) return key;
+  return template.replace(/\{(\w+)\}/g, (match, variable: string) =>
+    Object.prototype.hasOwnProperty.call(variables, variable) ? String(variables[variable]) : match,
+  );
+}
+
+export function useTranslation(lang: string) {
+  return (key: TranslationKey, variables: Record<string, string | number> = {}) => translate(lang, key, variables);
 }
 
 export function missingTranslationKeys(): Record<Language, string[]> {

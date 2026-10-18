@@ -37,7 +37,7 @@ export default function SummaryPage() {
       }
     }
     loadData();
-  }, [profile.selectedTradeId, profile.district]);
+  }, [profile.selectedTradeId, profile.district, profile.state, profile.income]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 flex flex-col items-center">

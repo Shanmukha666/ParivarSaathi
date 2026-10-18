@@ -3,7 +3,8 @@ import { createSupabaseServerClient } from '../../../../lib/supabase-server';
 import { fail } from '../../../../lib/guard';
 import { readJson } from '../../../../lib/http';
 
-export async function PATCH(request: Request, context: { params: { id: string } }) {
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
@@ -18,7 +19,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
   const { data, error } = await supabase
     .from('sessions')
     .update({ selected_trade_id: tradeId })
-    .eq('id', context.params.id)
+    .eq('id', id)
     .eq('owner_id', user.id)
     .select()
     .single();
@@ -27,7 +28,8 @@ export async function PATCH(request: Request, context: { params: { id: string } 
   return NextResponse.json(data);
 }
 
-export async function DELETE(request: Request, context: { params: { id: string } }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
@@ -35,7 +37,7 @@ export async function DELETE(request: Request, context: { params: { id: string }
   const { error } = await supabase
     .from('sessions')
     .delete()
-    .eq('id', context.params.id)
+    .eq('id', id)
     .eq('owner_id', user.id);
   if (error) return NextResponse.json({ error: 'Could not delete session' }, { status: 500 });
   return new NextResponse(null, { status: 204 });

@@ -12,7 +12,7 @@ import SourceBadge from '../../components/SourceBadge';
 import { PhoneCall, Send, Volume2, VolumeX, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { speakText, stopSpeaking } from '../../lib/speech';
 import { ensureFamilySession } from '../../lib/supabase';
-import { useTranslation } from '../../lib/i18n';
+import { translate, useTranslation } from '../../lib/i18n';
 import type { Source } from '../../lib/types';
 
 interface MessageItem {
@@ -22,6 +22,14 @@ interface MessageItem {
   content: string;
   citations?: Array<string | Source>;
   suggested_chips?: string[];
+}
+
+function isAuthenticationFailure(error: unknown): boolean {
+  return error instanceof Error && /authentication required|unauthori[sz]ed|invalid or expired token/i.test(error.message);
+}
+
+function isRateLimitFailure(error: unknown): boolean {
+  return error instanceof Error && /limit reached|too many requests/i.test(error.message);
 }
 
 export default function ChatPage() {
@@ -40,6 +48,12 @@ export default function ChatPage() {
   const [failedText, setFailedText] = useState<string | null>(null);
 
   const endRef = useRef<HTMLDivElement>(null);
+  const ttsEnabledRef = useRef(ttsEnabled);
+
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
@@ -92,11 +106,11 @@ export default function ChatPage() {
           id: 'init-1',
           role: 'assistant',
           speaker: 'ai',
-          content: t('chat_welcome', { trade: profile.selectedTradeName || t('default_trade') }),
-          suggested_chips: [t('chip_earnings'), t('chip_safety'), t('chip_degree')],
+          content: translate(language, 'chat_welcome', { trade: profile.selectedTradeName || translate(language, 'default_trade') }),
+          suggested_chips: [translate(language, 'chip_earnings'), translate(language, 'chip_safety'), translate(language, 'chip_degree')],
         };
         setMessages([initialAiMsg]);
-        if (ttsEnabled) {
+        if (ttsEnabledRef.current) {
           try { speakText(initialAiMsg.content, language); } catch {}
         }
       } catch (err) {
@@ -105,8 +119,8 @@ export default function ChatPage() {
           id: 'init-error',
           role: 'assistant',
           speaker: 'ai',
-          content: t('verified_data_unavailable'),
-          suggested_chips: [t('retry_message'), t('talk_to_counsellor')],
+          content: isAuthenticationFailure(err) ? translate(language, 'session_expired') : translate(language, 'verified_data_unavailable'),
+          suggested_chips: [translate(language, 'retry_message'), translate(language, 'talk_to_counsellor')],
         }]);
       }
     }
@@ -178,12 +192,13 @@ export default function ChatPage() {
     } catch (err) {
       console.error(err);
       // A daily or per-session limit cannot be fixed by retrying, so do not offer "retry" (it would loop).
-      const limited = err instanceof Error && /limit reached|too many requests/i.test(err.message);
+      const limited = isRateLimitFailure(err);
+      const sessionExpired = isAuthenticationFailure(err);
       const fallbackAi: MessageItem = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         speaker: 'ai',
-        content: t('verified_data_unavailable'),
+        content: sessionExpired ? t('session_expired') : limited ? t('request_limit_reached') : t('verified_data_unavailable'),
         citations: [],
         suggested_chips: limited ? [t('talk_to_counsellor')] : [t('talk_to_counsellor'), t('retry_message')]
       };

@@ -25,8 +25,8 @@ export default function ClientLayoutWrapper({ children }: { children: React.Reac
   }
 
   return (
-    <div className="app-backdrop"><main className="app-surface max-w-md mx-auto min-h-screen bg-white flex flex-col relative">
+    <main className="w-full min-h-screen bg-white flex flex-col relative">
       {children}
-    </main></div>
+    </main>
   );
 }

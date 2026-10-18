@@ -43,13 +43,13 @@ export default function ObjectionChips({ onSelect }: { onSelect: (objection: str
   const chips = chipsByLang[language] || chipsByLang.en;
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-none">
+    <div className="grid grid-cols-2 gap-2">
       {chips.map((chip, idx) => (
         <button
           key={idx}
           onClick={() => onSelect(chip.query)}
           aria-label={`Ask: ${chip.query}`}
-          className="whitespace-nowrap px-3.5 py-2.5 bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 rounded-full text-xs font-semibold shadow-sm transition-all min-h-[44px] flex items-center gap-1.5 active:scale-95"
+          className="min-w-0 min-h-[52px] px-3 py-2.5 bg-orange-50 hover:bg-orange-100 text-left text-orange-900 border border-orange-200 rounded-xl text-xs font-semibold leading-snug shadow-sm transition-all active:scale-95"
         >
           {chip.label}
         </button>

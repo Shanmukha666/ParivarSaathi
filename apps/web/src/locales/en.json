@@ -84,6 +84,8 @@
   "chip_safety": "Is it safe?",
   "chip_degree": "Isn't a degree better?",
   "verified_data_unavailable": "I cannot reach verified data right now. Please try again or talk to a counsellor.",
+  "session_expired": "Your session has expired. Please start again.",
+  "request_limit_reached": "You have reached the message limit. Please try again later or talk to a counsellor.",
   "talk_to_counsellor": "Talk to a counsellor",
   "counsellor_request_queued": "Your request has been queued. A vocational counsellor will contact you shortly.",
   "parent_question_placeholder": "Parent's question...",

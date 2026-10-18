@@ -51,4 +51,3 @@ tmp-chat-body.json
 scratch/
 
 .pytest_cache/
-live_preflight_report.json

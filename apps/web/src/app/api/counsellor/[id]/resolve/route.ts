@@ -6,14 +6,15 @@ import { parseId, readJson } from '../../../../../lib/http';
 
 const MAX_NOTE = 1000; // matches the escalations.resolution_note CHECK constraint
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   // Demo mode has no database: answer with a clearly labelled simulated success instead of a 403 the UI used to hide.
-  if (isDemoMode()) return NextResponse.json({ demo: true, id: params.id, status: 'resolved' });
+  if (isDemoMode()) return NextResponse.json({ demo: true, id, status: 'resolved' });
   const { supabase, user } = await getAuthenticatedUser();
   const denied = requireRole(user, 'counsellor');
   if (denied) return denied;
 
-  const ticketId = parseId(params.id);
+  const ticketId = parseId(id);
   if (ticketId === null) return fail(400, 'invalid_ticket_id');
 
   const body = (await readJson(request)) ?? {};

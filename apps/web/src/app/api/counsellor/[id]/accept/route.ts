@@ -4,14 +4,15 @@ import { fail } from '../../../../../lib/guard';
 import { isDemoMode } from '../../../../../lib/demo-mode';
 import { parseId } from '../../../../../lib/http';
 
-export async function POST(_request: Request, { params }: { params: { id: string } }) {
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   // Demo mode has no database: answer with a clearly labelled simulated success instead of a 403 the UI used to hide.
-  if (isDemoMode()) return NextResponse.json({ demo: true, id: params.id, status: 'assigned' });
+  if (isDemoMode()) return NextResponse.json({ demo: true, id, status: 'assigned' });
   const { supabase, user } = await getAuthenticatedUser();
   const denied = requireRole(user, 'counsellor');
   if (denied) return denied;
 
-  const ticketId = parseId(params.id);
+  const ticketId = parseId(id);
   if (ticketId === null) return fail(400, 'invalid_ticket_id');
 
   // The guard trigger stamps accepted_at and sets counsellor_id; the app never sends timestamps.
