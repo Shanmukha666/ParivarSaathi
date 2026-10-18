@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import PathwayLadder from '../../../components/PathwayLadder';
 import { ArrowLeft, MessageCircle, TrendingUp, Award, MapPin, Building, ShieldCheck, Users } from 'lucide-react';
 import WhyThisNumber from '../../../components/WhyThisNumber';
@@ -13,8 +13,9 @@ import { formatCurrency, useTranslation } from '../../../lib/i18n';
 import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../../../components/ui/ErrorMessage';
 
-export default function TradeDetail({ params }: { params: { id: string } }) {
+export default function TradeDetail() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
   const { language, profile, isHydrated, setSelectedTrade, sessionId } = useStore();
   const t = useTranslation(language);
   useEffect(() => { if (isHydrated) track('trade_viewed', sessionId); }, [isHydrated, sessionId]);
