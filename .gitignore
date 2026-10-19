@@ -47,6 +47,7 @@ Thumbs.db
 .env*.local
 .cursor/
 tmp-chat-body.json
+live_preflight_report.json
 -e .venv/
 scratch/
 

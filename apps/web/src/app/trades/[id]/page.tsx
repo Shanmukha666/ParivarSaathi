@@ -19,7 +19,7 @@ export default function TradeDetail() {
   const { language, profile, isHydrated, setSelectedTrade, sessionId } = useStore();
   const t = useTranslation(language);
   useEffect(() => { if (isHydrated) track('trade_viewed', sessionId); }, [isHydrated, sessionId]);
-  const tradeId = Number(params.id);
+  const tradeId = Number(params?.id);
   const validTradeId = Number.isInteger(tradeId) && tradeId > 0;
 
   const [trade, setTrade] = useState<any>(null);
